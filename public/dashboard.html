@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Mr. Vig LLC — Dashboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e8e9ec;min-height:100vh;padding:2rem;max-width:1400px;margin:0 auto}
+h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
+.subtitle{font-size:12px;color:#6b7280;margin-bottom:1.5rem}
+.toast{position:fixed;top:1.5rem;right:1.5rem;background:#1a1d2e;border:1px solid #2d3148;border-radius:8px;padding:.75rem 1.25rem;font-size:13px;color:#e8e9ec;display:none;z-index:999;max-width:420px}
+.toast.show{display:block}
+.toast.error{border-color:#7f1d1d;color:#f87171}
+.status-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.7rem 1.1rem;margin-bottom:1rem;font-size:13px;flex-wrap:wrap}
+.status-bar .left{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.status-bar .right{display:flex;align-items:center;gap:10px}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#34d399;margin-right:6px;vertical-align:middle}
+.status-dot.warn{background:#fb923c}
+.status-dot.bad{background:#f87171}
+.status-bar .info{color:#9ca3af}
+.status-bar .info strong{color:#e8e9ec}
+.user-pill{font-size:12px;color:#9ca3af;background:#1a1d2e;border:1px solid #2d3148;border-radius:6px;padding:5px 10px}
+.btn{font-size:12px;color:#9ca3af;border:1px solid #2d3148;border-radius:6px;padding:6px 12px;cursor:pointer;background:transparent;white-space:nowrap;font-family:inherit}
+.btn:hover{background:#1a1d2e;color:#e8e9ec}
+.btn.primary{color:#e8e9ec;background:#1a1d2e;border-color:#4a5080}
+.btn.primary:hover{background:#222538}
+.btn:disabled{opacity:.5;cursor:wait}
+.filter-bar{display:flex;flex-wrap:wrap;align-items:center;gap:14px;background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.85rem 1.1rem;margin-bottom:1.5rem}
+.filter-bar .filter-group{display:flex;align-items:center;gap:8px}
+.filter-bar label{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.filter-bar select,.filter-bar input[type=date],.filter-bar input[type=number]{font-size:13px;padding:5px 10px;border:1px solid #2d3148;border-radius:6px;background:#1a1d2e;color:#e8e9ec;font-family:inherit;color-scheme:dark}
+.filter-bar select{min-width:170px}
+.filter-bar input[type=date]{min-width:140px}
+.filter-bar input[type=number]{width:70px;text-align:right}
+.filter-bar .preset{font-size:11px;color:#9ca3af;cursor:pointer;padding:4px 8px;border-radius:4px}
+.filter-bar .preset:hover{background:#1a1d2e;color:#e8e9ec}
+.section{margin-bottom:1.75rem}
+.section-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #1e2035}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.metric{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.9rem 1rem}
+.metric-label{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem}
+.metric-value{font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.5px;line-height:1.1}
+.metric-value.xl{font-size:24px}
+.metric-sub{font-size:11px;color:#6b7280;margin-top:.3rem}
+.metric.red .metric-value{color:#f87171}
+.metric.green .metric-value{color:#34d399}
+.metric.orange .metric-value{color:#fb923c}
+.product-table{width:100%;border-collapse:collapse;font-size:13px}
+.product-table th{text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;padding:.6rem .75rem;border-bottom:1px solid #1e2035}
+.product-table th.num,.product-table td.num{text-align:right;font-variant-numeric:tabular-nums}
+.product-table td{padding:.7rem .75rem;border-bottom:1px solid #1a1d2e;font-variant-numeric:tabular-nums}
+.product-table tr:last-child td{border-bottom:none}
+.product-table .pname{color:#e8e9ec;font-weight:500}
+.product-table .dim{color:#9ca3af}
+.product-table tr.totals td{font-weight:600;border-top:1px solid #2d3148}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+@media(max-width:900px){.chart-grid{grid-template-columns:1fr}}
+.chart-card{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:1rem 1.25rem}
+.chart-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:.85rem}
+.chart-title .accent{color:#6c7ab0;margin-left:6px;font-weight:500}
+.chart-title.churn .accent{color:#f87171}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:12px;color:#9ca3af}
+.bar-row .month{width:60px;font-variant-numeric:tabular-nums;color:#6b7280}
+.bar-row .bar{flex:1;height:16px;background:#1a1d2e;border-radius:3px;position:relative;overflow:hidden}
+.bar-row .bar-fill{height:100%;border-radius:3px}
+.bar-row .bar-fill.sales{background:linear-gradient(90deg,#4a5080,#6c7ab0)}
+.bar-row .bar-fill.churn{background:linear-gradient(90deg,#7f1d1d,#f87171)}
+.bar-row .amount{width:90px;text-align:right;color:#e8e9ec;font-variant-numeric:tabular-nums;font-size:12px}
+.channel-pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{font-size:12px;background:#161926;border:1px solid #1e2035;border-radius:6px;padding:6px 12px;color:#9ca3af}
+.pill strong{color:#e8e9ec;margin-right:6px}
+.note{font-size:11px;color:#4b5563;margin-top:.5rem;font-style:italic}
+.empty{font-size:13px;color:#4b5563;text-align:center;padding:3rem 0}
+footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
+</style>
+</head>
+<body>
+<h1>Mr. Vig LLC</h1>
+<p class="subtitle">Stripe ledger · Kartra-orchestrated legacy + native Stripe direct · synced hourly from Stripe</p>
+
+<div class="toast" id="toast"></div>
+
+<div class="status-bar" id="status-bar">
+  <div class="left">
+    <div class="info" id="status-text"><span class="status-dot warn"></span>Loading…</div>
+  </div>
+  <div class="right">
+    <span class="user-pill" id="user-pill"></span>
+    <button class="btn primary" id="refresh-btn">↻ Refresh from Stripe</button>
+    <button class="btn" id="signout-btn">Sign out</button>
+  </div>
+</div>
+
+<div id="dashboard" style="display:none">
+  <div class="filter-bar">
+    <div class="filter-group">
+      <label>Product</label>
+      <select id="filter-product">
+        <option value="__all__">All products</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>From</label>
+      <input type="date" id="filter-start">
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="date" id="filter-end">
+    </div>
+    <div class="filter-group">
+      <span class="preset" data-preset="30">Last 30d</span>
+      <span class="preset" data-preset="90">Last 90d</span>
+      <span class="preset" data-preset="365">Last 12mo</span>
+      <span class="preset" data-preset="all">All time</span>
+    </div>
+    <div class="filter-group" style="margin-left:auto">
+      <label>EUR/USD</label>
+      <input type="number" id="rate-input" step="0.001" value="1.10">
+    </div>
+  </div>
+
+  <div style="font-size:14px;font-weight:500;margin-bottom:.2rem" id="snap-label">—</div>
+  <div style="font-size:12px;color:#6b7280;margin-bottom:1.5rem" id="snap-meta"></div>
+
+  <div class="section">
+    <div class="section-title">Selected window · headline</div>
+    <div class="metric-grid">
+      <div class="metric">
+        <div class="metric-label">Revenue collected</div>
+        <div class="metric-value xl" id="m-total-eur">—</div>
+        <div class="metric-sub" id="m-total-usd">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Active subscribers</div>
+        <div class="metric-value xl" id="m-active-total">—</div>
+        <div class="metric-sub" id="m-active-sub">distinct customers</div>
+      </div>
+      <div class="metric green">
+        <div class="metric-label">MRR run-rate</div>
+        <div class="metric-value xl" id="m-mrr">—</div>
+        <div class="metric-sub">monthly + annual prorated</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Projected rebills · next 30d</div>
+        <div class="metric-value xl" id="m-proj">—</div>
+        <div class="metric-sub" id="m-proj-count">—</div>
+      </div>
+      <div class="metric orange">
+        <div class="metric-label">Cancelled (in window)</div>
+        <div class="metric-value xl" id="m-cancelled">—</div>
+        <div class="metric-sub" id="m-cancelled-sub">subs that lapsed</div>
+      </div>
+      <div class="metric red">
+        <div class="metric-label">Churn rate (in window)</div>
+        <div class="metric-value xl" id="m-churn-pct">—</div>
+        <div class="metric-sub" id="m-churn-sub">vs cohort at window start</div>
+      </div>
+      <div class="metric red">
+        <div class="metric-label">Refunds (in window)</div>
+        <div class="metric-value" id="m-refunds">—</div>
+        <div class="metric-sub">processed refunds</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Channel split · in window</div>
+    <div class="channel-pills" id="channel-pills"></div>
+    <div class="note">Kartra-orchestrated = legacy subs (Kartra triggers Stripe charge). Native Stripe sub = new direct-link customers.</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Per-product breakdown</div>
+    <table class="product-table" id="product-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th class="num">Active</th>
+          <th class="num">Monthly / Annual</th>
+          <th class="num">Rev (€)</th>
+          <th class="num">MRR (€)</th>
+          <th class="num">New</th>
+          <th class="num">Cancelled</th>
+          <th class="num">Proj. 30d (€)</th>
+        </tr>
+      </thead>
+      <tbody id="product-tbody"></tbody>
+    </table>
+    <div class="note" id="product-note"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Monthly trends · within selected window</div>
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">Sales <span class="accent">revenue collected per month</span></div>
+        <div id="sales-chart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title churn">Churn <span class="accent">subs that lapsed per month</span></div>
+        <div id="churn-chart"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="empty" class="empty" style="display:none">No data yet. Click "Refresh from Stripe" to pull the latest charges.</div>
+
+<footer>Mr. Vig LLC · Stripe ledger · Firebase + Railway</footer>
+
+<script src="/firebase-config.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
+
+// ─── Price rules — KEEP IN SYNC with processor.py / backend ───────────
+const PRICE_RULES = {
+  "Mr. Vigs Atomic Homework": [
+    [29, 1], [33.50, 1], [39, 1], [49, 1], [71, 1],
+    [261, 12], [268, 12], [300.50, 12], [351, 12], [441, 12],
+  ],
+  "Vig Village": [
+    [60, 1], [99, 1], [198, 2], [540, 12],
+  ],
+  "Vitamin V EXTRA STRENGTH": [
+    [29, 1],
+  ],
+  "Speaking School": [
+    [29, 1], [87, 3],
+  ],
+};
+const TRACKED = Object.keys(PRICE_RULES);
+
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const eur = n => '€' + fmt(n);
+const usd = n => '$' + fmt(n);
+const ymd = d => d.toISOString().slice(0, 10);
+const ym = d => d.toISOString().slice(0, 7);
+
+function toast(msg, isErr) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' error' : '');
+  setTimeout(() => { el.className = 'toast'; }, 4000);
+}
+
+function normalizeProduct(desc) {
+  desc = (desc || '').trim();
+  if (!desc) return null;
+  if (desc.startsWith('Invoice ') || desc === 'Subscription creation') return '__native_sub_unattributed__';
+  return desc;
+}
+
+function monthsFor(product, amount) {
+  const rules = PRICE_RULES[product];
+  if (!rules) return null;
+  for (const [amt, months] of rules) {
+    if (Math.abs(amt - amount) < 0.01) return months;
+  }
+  return null;
+}
+
+// ─── State ────────────────────────────────────────────────────────────
+let allCharges = [];
+let dataMinDate = null;
+let dataMaxDate = null;
+let currentMetrics = null;
+let serverMeta = null;
+let firebaseAuth = null;
+
+// ─── Authentication ──────────────────────────────────────────────────
+const cfg = window.FIREBASE_CONFIG;
+if (!cfg || !cfg.apiKey) {
+  document.getElementById('status-text').innerHTML =
+    '<span class="status-dot bad"></span>Firebase is not configured on the server.';
+} else {
+  const app = initializeApp(cfg);
+  firebaseAuth = getAuth(app);
+  onAuthStateChanged(firebaseAuth, user => {
+    if (!user) { location.href = '/login'; return; }
+    document.getElementById('user-pill').textContent = user.email;
+    loadCharges();
+  });
+}
+
+document.getElementById('signout-btn').addEventListener('click', () => {
+  if (firebaseAuth) signOut(firebaseAuth).then(() => location.href = '/login');
+});
+
+async function authFetch(url, opts = {}) {
+  if (!firebaseAuth?.currentUser) throw new Error('Not signed in');
+  const token = await firebaseAuth.currentUser.getIdToken();
+  return fetch(url, {
+    ...opts,
+    headers: {
+      ...(opts.headers || {}),
+      Authorization: 'Bearer ' + token,
+    },
+  });
+}
+
+// ─── Data loading ────────────────────────────────────────────────────
+function chargesFromBackend(rows) {
+  const out = [];
+  const products = new Set();
+  for (const r of rows) {
+    const ts = parseInt(r.created, 10);
+    if (!ts) continue;
+    const dt = new Date(ts * 1000);
+    if (isNaN(dt)) continue;
+    const status = r.status || '';
+    if (status !== 'Paid' && status !== 'Refunded') continue;
+    const amount = parseFloat(r.amount || 0);
+    const refunded = parseFloat(r.amount_refunded || 0);
+    const net = amount - refunded;
+    const currency = (r.currency || '').toLowerCase();
+    const product = normalizeProduct(r.description);
+    if (product && product !== '__native_sub_unattributed__') products.add(product);
+    out.push({
+      date: dt,
+      amount, refunded, net, currency,
+      email: (r.customer_email || '').toLowerCase(),
+      customerId: r.customer_id || '',
+      invoiceId: r.invoice_id || '',
+      product,
+      rawDesc: r.description || '',
+      channel: r.channel || (r.invoice_id ? 'native_stripe_sub' : 'kartra_orchestrated'),
+      status,
+    });
+  }
+  return { charges: out, products };
+}
+
+async function loadCharges() {
+  document.getElementById('status-text').innerHTML =
+    '<span class="status-dot warn"></span>Loading from server cache…';
+  try {
+    const res = await authFetch('/api/charges');
+    if (res.status === 401 || res.status === 403) {
+      const body = await res.json().catch(() => ({}));
+      toast(body.error || 'Not authorized', true);
+      location.href = '/login';
+      return;
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    serverMeta = { warmedAt: data.warmedAt, lastRefreshAt: data.lastRefreshAt, lastRefreshResult: data.lastRefreshResult, count: data.count };
+    const { charges, products } = chargesFromBackend(data.charges || []);
+    allCharges = charges;
+    if (!charges.length) {
+      document.getElementById('empty').style.display = 'block';
+      document.getElementById('dashboard').style.display = 'none';
+      updateStatusBar();
+      return;
+    }
+    dataMinDate = new Date(Math.min(...charges.map(c => c.date.getTime())));
+    dataMaxDate = new Date(Math.max(...charges.map(c => c.date.getTime())));
+    populateProductFilter();
+    setRange(30);
+    updateStatusBar();
+  } catch (err) {
+    console.error(err);
+    document.getElementById('status-text').innerHTML =
+      '<span class="status-dot bad"></span>Load failed: ' + err.message;
+  }
+}
+
+function updateStatusBar() {
+  if (!serverMeta) return;
+  const last = serverMeta.lastRefreshAt ? new Date(serverMeta.lastRefreshAt).toLocaleString() : 'never';
+  document.getElementById('status-text').innerHTML =
+    `<span class="status-dot"></span>` +
+    `<strong>${fmt(serverMeta.count)}</strong> charges in ledger · ` +
+    `Last Stripe sync: <strong>${last}</strong>`;
+}
+
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true; btn.textContent = '↻ Refreshing…';
+  document.getElementById('status-text').innerHTML =
+    '<span class="status-dot warn"></span>Pulling new charges from Stripe…';
+  try {
+    const res = await authFetch('/api/refresh', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Refresh failed');
+    toast(`Refresh done: +${fmt(data.result.added)} new charges (scanned ${fmt(data.result.scanned)}).`);
+    await loadCharges();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = '↻ Refresh from Stripe';
+  }
+});
+
+// ─── Compute & render (identical logic to standalone dashboard) ──────
+function getFilters() {
+  return {
+    product: document.getElementById('filter-product').value,
+    start: new Date(document.getElementById('filter-start').value + 'T00:00:00Z'),
+    end: new Date(document.getElementById('filter-end').value + 'T23:59:59Z'),
+    rate: parseFloat(document.getElementById('rate-input').value) || 1.10,
+  };
+}
+
+function compute(filters) {
+  const { product: productFilter, start, end } = filters;
+  const asOf = end, cutoff = start;
+  const charges = allCharges.filter(c => {
+    if (c.date > asOf) return false;
+    if (productFilter !== '__all__') {
+      if (productFilter === '__other__') {
+        if (!c.product || c.product === '__native_sub_unattributed__' || TRACKED.includes(c.product)) return false;
+      } else if (productFilter === '__native__') {
+        if (c.product !== '__native_sub_unattributed__') return false;
+      } else {
+        if (c.product !== productFilter) return false;
+      }
+    }
+    return true;
+  });
+  if (!charges.length) return null;
+
+  const revenue = {};
+  const totals = { eur: 0, usd: 0 };
+  const channels = { kartra_orchestrated: { eur: 0, usd: 0 }, native_stripe_sub: { eur: 0, usd: 0 } };
+  const refunds = { eur: 0, usd: 0 };
+  const salesMonthly = {};
+  const churnMonthly = {};
+
+  for (const c of charges) {
+    const inWindow = c.date >= cutoff && c.date <= asOf;
+    if (c.net > 0 && inWindow) {
+      const p = c.product || '__unknown__';
+      if (!revenue[p]) revenue[p] = { eur: 0, usd: 0 };
+      revenue[p][c.currency] = (revenue[p][c.currency] || 0) + c.net;
+      totals[c.currency] = (totals[c.currency] || 0) + c.net;
+      channels[c.channel][c.currency] = (channels[c.channel][c.currency] || 0) + c.net;
+      const mk = ym(c.date);
+      if (!salesMonthly[mk]) salesMonthly[mk] = { eur: 0, usd: 0 };
+      salesMonthly[mk][c.currency] = (salesMonthly[mk][c.currency] || 0) + c.net;
+    }
+    if (c.refunded > 0 && inWindow) {
+      refunds[c.currency] = (refunds[c.currency] || 0) + c.refunded;
+    }
+  }
+
+  const histories = new Map();
+  for (const c of charges) {
+    if (c.status !== 'Paid' || c.net <= 0 || !c.product) continue;
+    const ident = c.email || c.customerId || c.invoiceId;
+    if (!ident) continue;
+    const key = c.product + '||' + ident;
+    if (!histories.has(key)) histories.set(key, []);
+    histories.get(key).push(c);
+  }
+  for (const arr of histories.values()) arr.sort((a, b) => a.date - b.date);
+
+  const lastCharge = new Map();
+  for (const [key, hist] of histories.entries()) {
+    const product = key.split('||')[0];
+    let best = null;
+    for (const c of hist) {
+      const months = monthsFor(product, c.amount);
+      if (months === null) continue;
+      if (!best || c.date > best.date) {
+        const activeUntil = new Date(c.date.getTime() + (months * 30 + 7) * 86400000);
+        best = { date: c.date, amount: c.amount, months, activeUntil, impliedMrr: c.amount / months, currency: c.currency, firstDate: hist[0].date };
+      }
+    }
+    if (best) lastCharge.set(key, best);
+  }
+
+  const includeKey = (p) =>
+    productFilter === '__all__' ? TRACKED.includes(p) :
+    productFilter === '__other__' ? !TRACKED.includes(p) && p !== '__native_sub_unattributed__' :
+    productFilter === '__native__' ? p === '__native_sub_unattributed__' :
+    p === productFilter;
+
+  const stats = {};
+  for (const p of TRACKED) {
+    stats[p] = { active: 0, mrr: 0, monthly: 0, annual: 0, other: 0, new30: 0, cancelled: 0, projCount: 0, projAmt: 0 };
+  }
+  const activeIdents = new Set();
+  const cohortStartIdents = new Set();
+  const cancelledIdents = new Set();
+  const in30 = new Date(asOf.getTime() + 30 * 86400000);
+
+  for (const [key, info] of lastCharge.entries()) {
+    const product = key.split('||')[0];
+    const ident = key.split('||')[1];
+    if (!includeKey(product)) continue;
+    const isActive = info.activeUntil >= asOf;
+    if (info.activeUntil >= cutoff) cohortStartIdents.add(ident);
+    if (isActive) {
+      if (TRACKED.includes(product)) {
+        const s = stats[product];
+        s.active++;
+        s.mrr += info.impliedMrr;
+        if (info.months >= 11) s.annual++;
+        else if (info.months === 1) s.monthly++;
+        else s.other++;
+        if (info.firstDate >= cutoff && info.firstDate <= asOf) s.new30++;
+        if (info.activeUntil >= asOf && info.activeUntil <= in30) {
+          s.projCount++;
+          s.projAmt += info.amount;
+        }
+      }
+      activeIdents.add(ident);
+    } else if (info.activeUntil >= cutoff && info.activeUntil < asOf) {
+      if (TRACKED.includes(product)) stats[product].cancelled++;
+      cancelledIdents.add(ident);
+      const mk = ym(info.activeUntil);
+      churnMonthly[mk] = (churnMonthly[mk] || 0) + 1;
+    }
+  }
+
+  const otherProductsRev = Object.entries(revenue)
+    .filter(([p]) => !TRACKED.includes(p) && p !== '__native_sub_unattributed__' && p !== '__unknown__')
+    .reduce((s, [, v]) => s + (v.eur || 0), 0);
+  const nativeUnattrib = revenue['__native_sub_unattributed__'] || { eur: 0, usd: 0 };
+
+  const cohortSize = cohortStartIdents.size;
+  const cancelledCount = cancelledIdents.size;
+  const churnPct = cohortSize > 0 ? (100 * cancelledCount / cohortSize) : 0;
+
+  const allMonths = new Set([...Object.keys(salesMonthly), ...Object.keys(churnMonthly)]);
+  const m0 = new Date(cutoff); m0.setUTCDate(1);
+  const mZ = new Date(asOf); mZ.setUTCDate(1);
+  for (let d = new Date(m0); d <= mZ; d.setUTCMonth(d.getUTCMonth() + 1)) allMonths.add(ym(d));
+  const sortedMonths = [...allMonths].sort();
+
+  return {
+    asOf: ymd(asOf), startOfWindow: ymd(cutoff),
+    chargeCount: charges.length,
+    totals, channels, refunds,
+    distinctActive: activeIdents.size,
+    cohortSize, cancelledCount, churnPct,
+    byProduct: TRACKED.map(p => ({
+      product: p,
+      active: stats[p].active, monthlySubs: stats[p].monthly, annualSubs: stats[p].annual, otherSubs: stats[p].other,
+      revenueEur: (revenue[p]?.eur || 0), revenueUsd: (revenue[p]?.usd || 0),
+      mrrEur: stats[p].mrr, new30: stats[p].new30, cancelled: stats[p].cancelled,
+      proj30Count: stats[p].projCount, proj30Eur: stats[p].projAmt,
+      isIncluded: includeKey(p),
+    })),
+    otherProductsRev,
+    nativeUnattribEur: nativeUnattrib.eur || 0,
+    nativeUnattribUsd: nativeUnattrib.usd || 0,
+    monthsInWindow: sortedMonths,
+    salesMonthly, churnMonthly,
+  };
+}
+
+function renderChartBars(containerId, months, values, kind, fmtFn) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  const max = Math.max(...values, 1);
+  if (!months.length) {
+    el.innerHTML = '<div style="font-size:12px;color:#4b5563;padding:1rem 0">No data in window.</div>';
+    return;
+  }
+  months.forEach((m, i) => {
+    const v = values[i];
+    const pct = (v / max) * 100;
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML =
+      `<span class="month">${m}</span>` +
+      `<div class="bar"><div class="bar-fill ${kind}" style="width:${pct}%"></div></div>` +
+      `<span class="amount">${fmtFn(v)}</span>`;
+    el.appendChild(row);
+  });
+}
+
+function render(m) {
+  if (!m) return;
+  document.getElementById('empty').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  const rate = parseFloat(document.getElementById('rate-input').value) || 1.10;
+
+  document.getElementById('snap-label').textContent = `Stripe ledger · ${m.startOfWindow} → ${m.asOf}`;
+  document.getElementById('snap-meta').textContent = `${fmt(m.chargeCount)} charges in scope`;
+
+  document.getElementById('m-total-eur').textContent = eur(m.totals.eur);
+  document.getElementById('m-total-usd').textContent =
+    (m.totals.usd ? usd(m.totals.usd) + ' native · ' : '') +
+    '$' + fmt(m.totals.eur * rate) + ' EUR→USD equiv.';
+  document.getElementById('m-active-total').textContent = fmt(m.distinctActive);
+
+  const totalMrr = m.byProduct.filter(p => p.isIncluded).reduce((s, p) => s + p.mrrEur, 0);
+  document.getElementById('m-mrr').textContent = eur(totalMrr) + '/mo';
+
+  const projTotalEur = m.byProduct.filter(p => p.isIncluded).reduce((s, p) => s + p.proj30Eur, 0);
+  const projTotalCount = m.byProduct.filter(p => p.isIncluded).reduce((s, p) => s + p.proj30Count, 0);
+  document.getElementById('m-proj').textContent = eur(projTotalEur);
+  document.getElementById('m-proj-count').textContent = fmt(projTotalCount) + ' rebills expected';
+
+  document.getElementById('m-cancelled').textContent = fmt(m.cancelledCount);
+  document.getElementById('m-cancelled-sub').textContent = `of ${fmt(m.cohortSize)} active at window start`;
+  document.getElementById('m-churn-pct').textContent = m.churnPct.toFixed(1) + '%';
+  document.getElementById('m-churn-sub').textContent = `${fmt(m.cancelledCount)} of ${fmt(m.cohortSize)} cohort`;
+  document.getElementById('m-refunds').textContent = eur(m.refunds.eur) + (m.refunds.usd ? ' + ' + usd(m.refunds.usd) : '');
+
+  const cp = document.getElementById('channel-pills');
+  cp.innerHTML = '';
+  const channels = [
+    { key: 'kartra_orchestrated', label: 'Kartra-orchestrated (legacy)' },
+    { key: 'native_stripe_sub', label: 'Native Stripe subs (new)' },
+  ];
+  const totalAll = m.totals.eur + m.totals.usd / rate;
+  for (const ch of channels) {
+    const v = m.channels[ch.key] || { eur: 0, usd: 0 };
+    const total = v.eur + v.usd / rate;
+    const pct = totalAll > 0 ? (100 * total / totalAll) : 0;
+    const div = document.createElement('div');
+    div.className = 'pill';
+    div.innerHTML = `<strong>${eur(v.eur)}${v.usd ? ' + ' + usd(v.usd) : ''}</strong> ${ch.label} <span style="color:#4b5563;margin-left:6px">${pct.toFixed(1)}%</span>`;
+    cp.appendChild(div);
+  }
+
+  const tbody = document.getElementById('product-tbody');
+  tbody.innerHTML = '';
+  let tA = 0, tR = 0, tM = 0, tN = 0, tC = 0, tPE = 0;
+  for (const p of m.byProduct) {
+    if (!p.isIncluded) continue;
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td class="pname">${p.product}</td>` +
+      `<td class="num">${fmt(p.active)}</td>` +
+      `<td class="num dim">${fmt(p.monthlySubs)} M / ${fmt(p.annualSubs)} A${p.otherSubs ? ' / ' + fmt(p.otherSubs) + ' x' : ''}</td>` +
+      `<td class="num">${eur(p.revenueEur)}</td>` +
+      `<td class="num">${eur(p.mrrEur)}</td>` +
+      `<td class="num">${fmt(p.new30)}</td>` +
+      `<td class="num" style="color:${p.cancelled > 0 ? '#f87171' : '#9ca3af'}">${fmt(p.cancelled)}</td>` +
+      `<td class="num">${eur(p.proj30Eur)}</td>`;
+    tbody.appendChild(tr);
+    tA += p.active; tR += p.revenueEur; tM += p.mrrEur; tN += p.new30; tC += p.cancelled; tPE += p.proj30Eur;
+  }
+  const totRow = document.createElement('tr');
+  totRow.className = 'totals';
+  totRow.innerHTML =
+    `<td>Totals (tracked)</td>` +
+    `<td class="num">${fmt(tA)}</td>` +
+    `<td class="num dim"></td>` +
+    `<td class="num">${eur(tR)}</td>` +
+    `<td class="num">${eur(tM)}</td>` +
+    `<td class="num">${fmt(tN)}</td>` +
+    `<td class="num" style="color:${tC > 0 ? '#f87171' : '#9ca3af'}">${fmt(tC)}</td>` +
+    `<td class="num">${eur(tPE)}</td>`;
+  tbody.appendChild(totRow);
+
+  const noteParts = [];
+  if (m.otherProductsRev > 0) noteParts.push(`Other (untracked) products: ${eur(m.otherProductsRev)} in window.`);
+  if (m.nativeUnattribEur > 0 || m.nativeUnattribUsd > 0) {
+    const bits = [];
+    if (m.nativeUnattribEur) bits.push(eur(m.nativeUnattribEur));
+    if (m.nativeUnattribUsd) bits.push(usd(m.nativeUnattribUsd));
+    noteParts.push(`Native Stripe subs without product attribution: ${bits.join(' + ')}.`);
+  }
+  document.getElementById('product-note').textContent = noteParts.join(' ');
+
+  const months = m.monthsInWindow;
+  const salesValues = months.map(mk => (m.salesMonthly[mk]?.eur || 0) + (m.salesMonthly[mk]?.usd || 0) / rate);
+  const churnValues = months.map(mk => m.churnMonthly[mk] || 0);
+  renderChartBars('sales-chart', months, salesValues, 'sales', eur);
+  renderChartBars('churn-chart', months, churnValues, 'churn', fmt);
+}
+
+function recompute() {
+  if (!allCharges.length) return;
+  currentMetrics = compute(getFilters());
+  render(currentMetrics);
+}
+
+function populateProductFilter() {
+  const sel = document.getElementById('filter-product');
+  sel.innerHTML = '<option value="__all__">All products</option>';
+  for (const p of TRACKED) {
+    const o = document.createElement('option');
+    o.value = p; o.textContent = p;
+    sel.appendChild(o);
+  }
+  const oOther = document.createElement('option');
+  oOther.value = '__other__'; oOther.textContent = '— Other tracked products —';
+  sel.appendChild(oOther);
+  const oNative = document.createElement('option');
+  oNative.value = '__native__'; oNative.textContent = '— Native Stripe (unattributed) —';
+  sel.appendChild(oNative);
+}
+
+function setRange(days) {
+  if (!dataMaxDate) return;
+  const end = ymd(dataMaxDate);
+  const start = days === 'all'
+    ? ymd(dataMinDate)
+    : ymd(new Date(dataMaxDate.getTime() - days * 86400000));
+  document.getElementById('filter-start').value = start;
+  document.getElementById('filter-end').value = end;
+  recompute();
+}
+
+document.getElementById('rate-input').addEventListener('input', recompute);
+document.getElementById('filter-product').addEventListener('change', recompute);
+document.getElementById('filter-start').addEventListener('change', recompute);
+document.getElementById('filter-end').addEventListener('change', recompute);
+document.querySelectorAll('.preset').forEach(el => {
+  el.addEventListener('click', () => {
+    const p = el.dataset.preset;
+    setRange(p === 'all' ? 'all' : parseInt(p, 10));
+  });
+});
+</script>
+</body>
+</html>

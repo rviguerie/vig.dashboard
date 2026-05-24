@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+
+# Local-only artifacts (never deploy these)
+unified_payments*.csv
+data.js
+service-account*.json

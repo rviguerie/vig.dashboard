@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Mr. Vig LLC — Sign in</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e8e9ec;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
+.card{background:#161926;border:1px solid #1e2035;border-radius:12px;padding:2.5rem 2.5rem;max-width:380px;width:100%;text-align:center}
+h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.4rem}
+.subtitle{font-size:12px;color:#6b7280;margin-bottom:2rem}
+.btn-google{display:inline-flex;align-items:center;gap:10px;font-size:14px;color:#e8e9ec;background:#1a1d2e;border:1px solid #4a5080;border-radius:8px;padding:10px 18px;cursor:pointer;font-family:inherit;transition:background .15s}
+.btn-google:hover{background:#222538}
+.btn-google:disabled{opacity:.5;cursor:wait}
+.btn-google svg{width:18px;height:18px}
+.error{font-size:12px;color:#f87171;margin-top:1rem;min-height:14px}
+.note{font-size:11px;color:#4b5563;margin-top:2rem;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Mr. Vig LLC</h1>
+  <p class="subtitle">Revenue dashboard · Sign in to continue</p>
+  <button class="btn-google" id="signin-btn" disabled>
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A10.99 10.99 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.44.34-2.1V7.07H2.18A11 11 0 0 0 1 12c0 1.77.42 3.44 1.18 4.93l3.66-2.83z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.07.56 4.21 1.65l3.15-3.15C17.45 2.09 14.97 1 12 1A10.99 10.99 0 0 0 2.18 7.07l3.66 2.83C6.71 7.31 9.14 5.38 12 5.38z"/></svg>
+    <span id="signin-label">Loading…</span>
+  </button>
+  <div class="error" id="error"></div>
+  <div class="note">
+    Access is restricted to allowlisted Google accounts. If you need access, ask the project admin to add your email.
+  </div>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
+
+const cfg = window.FIREBASE_CONFIG;
+if (!cfg || !cfg.apiKey) {
+  document.getElementById('error').textContent = 'Firebase is not configured on the server.';
+} else {
+  const app = initializeApp(cfg);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+  const btn = document.getElementById('signin-btn');
+  const label = document.getElementById('signin-label');
+  const errEl = document.getElementById('error');
+
+  btn.disabled = false;
+  label.textContent = 'Sign in with Google';
+
+  // If already signed in, go straight to the dashboard
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      // Verify with backend (so we surface allowlist rejections cleanly)
+      user.getIdToken().then(token => {
+        fetch('/api/me', { headers: { Authorization: 'Bearer ' + token } })
+          .then(r => r.ok ? location.href = '/dashboard' : r.json().then(j => {
+            errEl.textContent = (j.error || 'Access denied') + (j.email ? ` (${j.email})` : '');
+            auth.signOut();
+          }));
+      });
+    }
+  });
+
+  btn.addEventListener('click', async () => {
+    errEl.textContent = '';
+    btn.disabled = true; label.textContent = 'Signing in…';
+    try {
+      await signInWithPopup(auth, provider);
+      // onAuthStateChanged handles the redirect
+    } catch (err) {
+      errEl.textContent = err.message || 'Sign-in failed';
+      btn.disabled = false; label.textContent = 'Sign in with Google';
+    }
+  });
+}
+</script>
+</body>
+</html>

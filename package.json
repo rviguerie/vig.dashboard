@@ -1,0 +1,22 @@
+{
+  "name": "mr-vig-dashboard",
+  "version": "1.0.0",
+  "description": "Multi-channel revenue/churn dashboard for Mr. Vig LLC. Combines Kartra-orchestrated and direct Stripe subs; Firebase Auth, Firestore storage, hourly Stripe sync.",
+  "main": "backend/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "node --watch backend/server.js",
+    "seed": "node backend/seed.js",
+    "refresh-once": "node -e \"import('./backend/stripe-refresh.js').then(m=>m.refreshFromStripe()).then(r=>{console.log(r);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\""
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "firebase-admin": "^12.7.0",
+    "node-cron": "^3.0.3"
+  }
+}
