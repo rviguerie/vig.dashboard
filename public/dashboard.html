@@ -60,13 +60,19 @@ h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
 .chart-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:.85rem}
 .chart-title .accent{color:#6c7ab0;margin-left:6px;font-weight:500}
 .chart-title.churn .accent{color:#f87171}
-.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:12px;color:#9ca3af}
-.bar-row .month{width:60px;font-variant-numeric:tabular-nums;color:#6b7280}
-.bar-row .bar{flex:1;height:16px;background:#1a1d2e;border-radius:3px;position:relative;overflow:hidden}
-.bar-row .bar-fill{height:100%;border-radius:3px}
-.bar-row .bar-fill.sales{background:linear-gradient(90deg,#4a5080,#6c7ab0)}
-.bar-row .bar-fill.churn{background:linear-gradient(90deg,#7f1d1d,#f87171)}
-.bar-row .amount{width:90px;text-align:right;color:#e8e9ec;font-variant-numeric:tabular-nums;font-size:12px}
+.bars-v{display:flex;align-items:stretch;gap:4px;height:200px;padding-top:4px}
+.bars-v .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.bars-v .col .val{font-size:10px;color:#9ca3af;font-variant-numeric:tabular-nums;white-space:nowrap;height:14px}
+.bars-v .col .track{flex:1;width:100%;background:#1a1d2e;border-radius:3px;display:flex;align-items:flex-end;overflow:hidden;min-height:4px}
+.bars-v .col .fill{width:100%;border-radius:3px 3px 0 0;min-height:1px}
+.bars-v .col .fill.sales{background:linear-gradient(180deg,#6c7ab0,#4a5080)}
+.bars-v .col .fill.churn{background:linear-gradient(180deg,#f87171,#7f1d1d)}
+.bars-v .col .lbl{font-size:10px;color:#6b7280;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:center}
+.bars-v .col.zero .fill{background:#2d3148}
+.bars-v .col.zero .val{color:#4b5563}
+.bars-v.crowded{padding-bottom:22px;height:220px}
+.bars-v.crowded .col .val{display:none}
+.bars-v.crowded .col .lbl{transform:rotate(-45deg);transform-origin:right top;margin-right:-14px;margin-top:6px;font-size:9px}
 .channel-pills{display:flex;gap:8px;flex-wrap:wrap}
 .pill{font-size:12px;background:#161926;border:1px solid #1e2035;border-radius:6px;padding:6px 12px;color:#9ca3af}
 .pill strong{color:#e8e9ec;margin-right:6px}
@@ -552,25 +558,35 @@ function compute(filters) {
   };
 }
 
+function shortMonth(ym) {
+  const [y, m] = ym.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[parseInt(m, 10) - 1]} '${y.slice(2)}`;
+}
+
 function renderChartBars(containerId, months, values, kind, fmtFn) {
   const el = document.getElementById(containerId);
   el.innerHTML = '';
-  const max = Math.max(...values, 1);
   if (!months.length) {
     el.innerHTML = '<div style="font-size:12px;color:#4b5563;padding:1rem 0">No data in window.</div>';
     return;
   }
+  const max = Math.max(...values, 1);
+  const container = document.createElement('div');
+  container.className = 'bars-v' + (months.length > 18 ? ' crowded' : '');
   months.forEach((m, i) => {
     const v = values[i];
-    const pct = (v / max) * 100;
-    const row = document.createElement('div');
-    row.className = 'bar-row';
-    row.innerHTML =
-      `<span class="month">${m}</span>` +
-      `<div class="bar"><div class="bar-fill ${kind}" style="width:${pct}%"></div></div>` +
-      `<span class="amount">${fmtFn(v)}</span>`;
-    el.appendChild(row);
+    const pct = max > 0 ? (v / max) * 100 : 0;
+    const col = document.createElement('div');
+    col.className = 'col' + (v === 0 ? ' zero' : '');
+    col.title = `${m}: ${fmtFn(v)}`;
+    col.innerHTML =
+      `<span class="val">${fmtFn(v)}</span>` +
+      `<div class="track"><div class="fill ${kind}" style="height:${pct}%"></div></div>` +
+      `<span class="lbl">${shortMonth(m)}</span>`;
+    container.appendChild(col);
   });
+  el.appendChild(container);
 }
 
 function render(m) {
