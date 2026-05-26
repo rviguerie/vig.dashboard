@@ -54,11 +54,13 @@ h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
 .product-table .pname{color:#e8e9ec;font-weight:500}
 .product-table .dim{color:#9ca3af}
 .product-table tr.totals td{font-weight:600;border-top:1px solid #2d3148}
-.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-@media(max-width:900px){.chart-grid{grid-template-columns:1fr}}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+@media(max-width:1100px){.chart-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.chart-grid{grid-template-columns:1fr}}
 .chart-card{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:1rem 1.25rem}
 .chart-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:.85rem}
 .chart-title .accent{color:#6c7ab0;margin-left:6px;font-weight:500}
+.chart-title.rebills .accent{color:#34d399}
 .chart-title.churn .accent{color:#f87171}
 .bars-v{display:flex;align-items:stretch;gap:4px;height:200px;padding-top:4px}
 .bars-v .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
@@ -66,6 +68,7 @@ h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
 .bars-v .col .track{flex:1;width:100%;background:#1a1d2e;border-radius:3px;display:flex;align-items:flex-end;overflow:hidden;min-height:4px}
 .bars-v .col .fill{width:100%;border-radius:3px 3px 0 0;min-height:1px}
 .bars-v .col .fill.sales{background:linear-gradient(180deg,#6c7ab0,#4a5080)}
+.bars-v .col .fill.rebills{background:linear-gradient(180deg,#34d399,#0d6e4d)}
 .bars-v .col .fill.churn{background:linear-gradient(180deg,#f87171,#7f1d1d)}
 .bars-v .col .lbl{font-size:10px;color:#6b7280;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:center}
 .bars-v .col.zero .fill{background:#2d3148}
@@ -138,6 +141,16 @@ footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
         <div class="metric-sub" id="m-total-usd">—</div>
       </div>
       <div class="metric">
+        <div class="metric-label">Sales (new)</div>
+        <div class="metric-value xl" id="m-sales-eur">—</div>
+        <div class="metric-sub" id="m-sales-sub">first-time charges</div>
+      </div>
+      <div class="metric green">
+        <div class="metric-label">Rebills (recurring)</div>
+        <div class="metric-value xl" id="m-rebills-eur">—</div>
+        <div class="metric-sub" id="m-rebills-sub">repeat charges</div>
+      </div>
+      <div class="metric">
         <div class="metric-label">Active subscribers</div>
         <div class="metric-value xl" id="m-active-total">—</div>
         <div class="metric-sub" id="m-active-sub">distinct customers</div>
@@ -200,8 +213,12 @@ footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
     <div class="section-title">Monthly trends · within selected window</div>
     <div class="chart-grid">
       <div class="chart-card">
-        <div class="chart-title">Sales <span class="accent">revenue collected per month</span></div>
+        <div class="chart-title">Sales <span class="accent">new acquisition revenue per month</span></div>
         <div id="sales-chart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title rebills">Rebills <span class="accent">recurring revenue per month</span></div>
+        <div id="rebills-chart"></div>
       </div>
       <div class="chart-card">
         <div class="chart-title churn">Churn <span class="accent">subs that lapsed per month</span></div>
@@ -427,11 +444,29 @@ function compute(filters) {
   });
   if (!charges.length) return null;
 
+  // Build first-paid-charge date per (product, ident) across the entire
+  // filtered history so we can classify each charge as Sale (customer's
+  // very first paid charge for that product) vs Rebill (any subsequent).
+  const firstChargeDate = new Map();
+  for (const c of charges) {
+    if (c.status !== 'Paid' || c.net <= 0 || !c.product) continue;
+    const ident = c.email || c.customerId || c.invoiceId;
+    if (!ident) continue;
+    const key = c.product + '||' + ident;
+    const cur = firstChargeDate.get(key);
+    if (!cur || c.date < cur) firstChargeDate.set(key, c.date);
+  }
+
   const revenue = {};
   const totals = { eur: 0, usd: 0 };
+  const totalSales = { eur: 0, usd: 0 };
+  const totalRebills = { eur: 0, usd: 0 };
+  const salesCount = { count: 0 };
+  const rebillsCount = { count: 0 };
   const channels = { kartra_orchestrated: { eur: 0, usd: 0 }, native_stripe_sub: { eur: 0, usd: 0 } };
   const refunds = { eur: 0, usd: 0 };
   const salesMonthly = {};
+  const rebillsMonthly = {};
   const churnMonthly = {};
 
   for (const c of charges) {
@@ -443,8 +478,27 @@ function compute(filters) {
       totals[c.currency] = (totals[c.currency] || 0) + c.net;
       channels[c.channel][c.currency] = (channels[c.channel][c.currency] || 0) + c.net;
       const mk = ym(c.date);
-      if (!salesMonthly[mk]) salesMonthly[mk] = { eur: 0, usd: 0 };
-      salesMonthly[mk][c.currency] = (salesMonthly[mk][c.currency] || 0) + c.net;
+
+      // Sale vs Rebill classification
+      let isSaleCharge = false;
+      if (c.status === 'Paid' && c.product) {
+        const ident = c.email || c.customerId || c.invoiceId;
+        if (ident) {
+          const first = firstChargeDate.get(c.product + '||' + ident);
+          if (first && c.date.getTime() === first.getTime()) isSaleCharge = true;
+        }
+      }
+      if (isSaleCharge) {
+        totalSales[c.currency] = (totalSales[c.currency] || 0) + c.net;
+        salesCount.count++;
+        if (!salesMonthly[mk]) salesMonthly[mk] = { eur: 0, usd: 0 };
+        salesMonthly[mk][c.currency] = (salesMonthly[mk][c.currency] || 0) + c.net;
+      } else {
+        totalRebills[c.currency] = (totalRebills[c.currency] || 0) + c.net;
+        rebillsCount.count++;
+        if (!rebillsMonthly[mk]) rebillsMonthly[mk] = { eur: 0, usd: 0 };
+        rebillsMonthly[mk][c.currency] = (rebillsMonthly[mk][c.currency] || 0) + c.net;
+      }
     }
     if (c.refunded > 0 && inWindow) {
       refunds[c.currency] = (refunds[c.currency] || 0) + c.refunded;
@@ -530,7 +584,11 @@ function compute(filters) {
   const cancelledCount = cancelledIdents.size;
   const churnPct = cohortSize > 0 ? (100 * cancelledCount / cohortSize) : 0;
 
-  const allMonths = new Set([...Object.keys(salesMonthly), ...Object.keys(churnMonthly)]);
+  const allMonths = new Set([
+    ...Object.keys(salesMonthly),
+    ...Object.keys(rebillsMonthly),
+    ...Object.keys(churnMonthly),
+  ]);
   const m0 = new Date(cutoff); m0.setUTCDate(1);
   const mZ = new Date(asOf); mZ.setUTCDate(1);
   for (let d = new Date(m0); d <= mZ; d.setUTCMonth(d.getUTCMonth() + 1)) allMonths.add(ym(d));
@@ -540,6 +598,8 @@ function compute(filters) {
     asOf: ymd(asOf), startOfWindow: ymd(cutoff),
     chargeCount: charges.length,
     totals, channels, refunds,
+    totalSales, totalRebills,
+    salesCount: salesCount.count, rebillsCount: rebillsCount.count,
     distinctActive: activeIdents.size,
     cohortSize, cancelledCount, churnPct,
     byProduct: TRACKED.map(p => ({
@@ -554,7 +614,7 @@ function compute(filters) {
     nativeUnattribEur: nativeUnattrib.eur || 0,
     nativeUnattribUsd: nativeUnattrib.usd || 0,
     monthsInWindow: sortedMonths,
-    salesMonthly, churnMonthly,
+    salesMonthly, rebillsMonthly, churnMonthly,
   };
 }
 
@@ -602,6 +662,15 @@ function render(m) {
   document.getElementById('m-total-usd').textContent =
     (m.totals.usd ? usd(m.totals.usd) + ' native · ' : '') +
     '$' + fmt(m.totals.eur * rate) + ' EUR→USD equiv.';
+
+  const pct = (n, d) => d > 0 ? (100 * n / d).toFixed(0) + '%' : '—';
+  document.getElementById('m-sales-eur').textContent = eur(m.totalSales.eur);
+  document.getElementById('m-sales-sub').textContent =
+    `${pct(m.totalSales.eur, m.totals.eur)} of revenue · ${fmt(m.salesCount)} charges`;
+  document.getElementById('m-rebills-eur').textContent = eur(m.totalRebills.eur);
+  document.getElementById('m-rebills-sub').textContent =
+    `${pct(m.totalRebills.eur, m.totals.eur)} of revenue · ${fmt(m.rebillsCount)} charges`;
+
   document.getElementById('m-active-total').textContent = fmt(m.distinctActive);
 
   const totalMrr = m.byProduct.filter(p => p.isIncluded).reduce((s, p) => s + p.mrrEur, 0);
@@ -677,10 +746,12 @@ function render(m) {
   document.getElementById('product-note').textContent = noteParts.join(' ');
 
   const months = m.monthsInWindow;
-  const salesValues = months.map(mk => (m.salesMonthly[mk]?.eur || 0) + (m.salesMonthly[mk]?.usd || 0) / rate);
-  const churnValues = months.map(mk => m.churnMonthly[mk] || 0);
-  renderChartBars('sales-chart', months, salesValues, 'sales', eur);
-  renderChartBars('churn-chart', months, churnValues, 'churn', fmt);
+  const salesValues   = months.map(mk => (m.salesMonthly[mk]?.eur   || 0) + (m.salesMonthly[mk]?.usd   || 0) / rate);
+  const rebillsValues = months.map(mk => (m.rebillsMonthly[mk]?.eur || 0) + (m.rebillsMonthly[mk]?.usd || 0) / rate);
+  const churnValues   = months.map(mk => m.churnMonthly[mk] || 0);
+  renderChartBars('sales-chart',   months, salesValues,   'sales',   eur);
+  renderChartBars('rebills-chart', months, rebillsValues, 'rebills', eur);
+  renderChartBars('churn-chart',   months, churnValues,   'churn',   fmt);
 }
 
 function recompute() {
