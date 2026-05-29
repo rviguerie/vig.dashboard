@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Mr. Vig LLC — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e8e9ec;min-height:100vh;padding:2rem;max-width:1400px;margin:0 auto}
@@ -82,6 +83,44 @@ h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
 .note{font-size:11px;color:#4b5563;margin-top:.5rem;font-style:italic}
 .empty{font-size:13px;color:#4b5563;text-align:center;padding:3rem 0}
 footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
+/* Chat widget */
+.chat-fab{position:fixed;bottom:22px;right:22px;z-index:1000;background:#4a5080;color:#fff;border:none;border-radius:24px;padding:11px 18px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.chat-fab:hover{background:#5a62a0}
+.chat-panel{position:fixed;bottom:22px;right:22px;z-index:1001;width:440px;max-width:calc(100vw - 32px);height:640px;max-height:calc(100vh - 44px);background:#0f1117;border:1px solid #2d3148;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.55);display:none;flex-direction:column;overflow:hidden}
+.chat-panel.open{display:flex}
+.chat-head{display:flex;align-items:center;justify-content:space-between;padding:.8rem 1rem;border-bottom:1px solid #1e2035;background:#161926}
+.chat-head .t{font-size:13px;font-weight:600;color:#e8e9ec}
+.chat-head .t span{color:#6b7280;font-weight:400;font-size:11px;margin-left:6px}
+.chat-head button{background:transparent;border:none;color:#9ca3af;font-size:16px;cursor:pointer}
+.chat-msgs{flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:12px}
+.chat-empty{color:#4b5563;font-size:12px;text-align:center;margin:auto;padding:1rem;line-height:1.7}
+.chat-empty b{color:#9ca3af;display:block;margin-bottom:.5rem}
+.chat-empty .ex{display:block;color:#6c7ab0;cursor:pointer;margin:4px 0}
+.chat-empty .ex:hover{text-decoration:underline}
+.cmsg{font-size:13px;line-height:1.55;max-width:92%}
+.cmsg.user{align-self:flex-end;background:#1a2240;border:1px solid #2d3a6a;color:#e8e9ec;border-radius:12px 12px 2px 12px;padding:.55rem .8rem}
+.cmsg.assistant{align-self:flex-start;color:#d6d8de}
+.cmsg.assistant table{border-collapse:collapse;font-size:12px;margin:.5rem 0;width:100%}
+.cmsg.assistant th,.cmsg.assistant td{border:1px solid #1e2035;padding:4px 8px;text-align:left}
+.cmsg.assistant th{color:#9ca3af;background:#161926;font-weight:600}
+.cmsg.assistant h3{font-size:13px;margin:.5rem 0 .3rem}
+.cmsg.assistant p{margin:.4rem 0}
+.cmsg.assistant ul{margin:.4rem 0;padding-left:1.2rem}
+.cmsg.assistant code{background:#161926;padding:1px 4px;border-radius:3px;font-size:12px}
+.cmsg.thinking{align-self:flex-start;color:#6b7280;font-size:12px;font-style:italic}
+.chat-chart{background:#161926;border:1px solid #1e2035;border-radius:8px;padding:.7rem .9rem;margin:.5rem 0}
+.chat-chart .ct{font-size:11px;color:#9ca3af;font-weight:600;margin-bottom:.6rem}
+.chat-bars{display:flex;align-items:flex-end;gap:3px;height:120px}
+.chat-bars .cb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.chat-bars .cb .bt{flex:1;width:100%;background:#1a1d2e;border-radius:2px;display:flex;align-items:flex-end;overflow:hidden;min-height:2px}
+.chat-bars .cb .bf{width:100%;border-radius:2px 2px 0 0;min-height:1px}
+.chat-bars .cb .bf.revenue{background:linear-gradient(180deg,#6c7ab0,#4a5080)}
+.chat-bars .cb .bf.churn{background:linear-gradient(180deg,#f87171,#7f1d1d)}
+.chat-bars .cb .bl{font-size:8px;color:#6b7280;white-space:nowrap;transform:rotate(-45deg);transform-origin:center;margin-top:8px}
+.chat-input-row{display:flex;gap:8px;padding:.7rem;border-top:1px solid #1e2035;background:#161926}
+.chat-input-row input{flex:1;font-size:13px;padding:8px 12px;border:1px solid #2d3148;border-radius:8px;background:#1a1d2e;color:#e8e9ec;font-family:inherit}
+.chat-input-row button{background:#4a5080;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit}
+.chat-input-row button:disabled{opacity:.5;cursor:wait}
 </style>
 </head>
 <body>
@@ -231,6 +270,27 @@ footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
 <div id="empty" class="empty" style="display:none">No data yet. Click "Refresh from Stripe" to pull the latest charges.</div>
 
 <footer>Mr. Vig LLC · Stripe ledger · Firebase + Railway</footer>
+
+<button class="chat-fab" id="chat-fab">💬 Ask your data</button>
+<div class="chat-panel" id="chat-panel">
+  <div class="chat-head">
+    <div class="t">Ask your data <span>aggregates only · powered by AI</span></div>
+    <button id="chat-close" title="Close">✕</button>
+  </div>
+  <div class="chat-msgs" id="chat-msgs">
+    <div class="chat-empty" id="chat-empty">
+      <b>Ask anything about your revenue</b>
+      <span class="ex" data-q="What was our total revenue in the last 30 days, by channel?">› Revenue last 30 days, by channel</span>
+      <span class="ex" data-q="How did Vig Village do this month vs last month?">› Vig Village this month vs last</span>
+      <span class="ex" data-q="Show me a monthly revenue trend for the last 6 months">› Monthly revenue trend (chart)</span>
+      <span class="ex" data-q="What is our current churn rate and how many cancelled this month?">› Current churn rate</span>
+    </div>
+  </div>
+  <div class="chat-input-row">
+    <input id="chat-input" placeholder="e.g. How many active Atomic Homework subscribers?" autocomplete="off">
+    <button id="chat-send">Send</button>
+  </div>
+</div>
 
 <script src="/firebase-config.js"></script>
 <script type="module">
@@ -803,6 +863,91 @@ document.querySelectorAll('.preset').forEach(el => {
     setRange(p === 'all' ? 'all' : parseInt(p, 10));
   });
 });
+
+// ─── Chat with your data ─────────────────────────────────────────────
+const chatHistory = [];
+const $msgs = document.getElementById('chat-msgs');
+const $input = document.getElementById('chat-input');
+const $send = document.getElementById('chat-send');
+
+document.getElementById('chat-fab').addEventListener('click', () => {
+  document.getElementById('chat-panel').classList.add('open');
+  document.getElementById('chat-fab').style.display = 'none';
+  $input.focus();
+});
+document.getElementById('chat-close').addEventListener('click', () => {
+  document.getElementById('chat-panel').classList.remove('open');
+  document.getElementById('chat-fab').style.display = '';
+});
+document.querySelectorAll('.chat-empty .ex').forEach(el => {
+  el.addEventListener('click', () => { $input.value = el.dataset.q; sendChat(); });
+});
+
+function chatChartHTML(chart) {
+  const max = Math.max(...chart.points.map(p => p.value), 1);
+  const fmtVal = (v) => chart.unit === 'count' ? fmt(v) : eur(v);
+  const bars = chart.points.map(p => {
+    const h = max > 0 ? (p.value / max) * 100 : 0;
+    return `<div class="cb" title="${p.label}: ${fmtVal(p.value)}"><div class="bt"><div class="bf ${chart.kind}" style="height:${h}%"></div></div><div class="bl">${p.label}</div></div>`;
+  }).join('');
+  return `<div class="chat-chart"><div class="ct">${chart.title}</div><div class="chat-bars">${bars}</div></div>`;
+}
+
+function renderChat() {
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.style.display = chatHistory.length ? 'none' : '';
+  // remove existing rendered messages (keep the empty hint node)
+  [...$msgs.querySelectorAll('.cmsg')].forEach(n => n.remove());
+  for (const m of chatHistory) {
+    const div = document.createElement('div');
+    div.className = 'cmsg ' + m.role;
+    if (m.role === 'assistant') {
+      let html = window.marked ? marked.parse(m.content || '') : (m.content || '').replace(/\n/g, '<br>');
+      if (m.charts && m.charts.length) html += m.charts.map(chatChartHTML).join('');
+      div.innerHTML = html;
+    } else {
+      div.textContent = m.content;
+    }
+    $msgs.appendChild(div);
+  }
+  $msgs.scrollTop = $msgs.scrollHeight;
+}
+
+async function sendChat() {
+  const text = $input.value.trim();
+  if (!text || $send.disabled) return;
+  $input.value = '';
+  chatHistory.push({ role: 'user', content: text });
+  renderChat();
+  $send.disabled = true;
+  const thinking = document.createElement('div');
+  thinking.className = 'cmsg thinking';
+  thinking.textContent = 'Analyzing…';
+  $msgs.appendChild(thinking);
+  $msgs.scrollTop = $msgs.scrollHeight;
+  try {
+    const res = await authFetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: chatHistory.map(m => ({ role: m.role, content: m.content })) }),
+    });
+    const data = await res.json();
+    thinking.remove();
+    if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    chatHistory.push({ role: 'assistant', content: data.answer || '(no answer)', charts: data.charts || [] });
+    renderChat();
+  } catch (err) {
+    thinking.remove();
+    chatHistory.push({ role: 'assistant', content: '⚠️ ' + err.message, charts: [] });
+    renderChat();
+  } finally {
+    $send.disabled = false;
+    $input.focus();
+  }
+}
+
+$send.addEventListener('click', sendChat);
+$input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
 </script>
 </body>
 </html>

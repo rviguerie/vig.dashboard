@@ -26,6 +26,7 @@ import { requireAuth } from './auth.js';
 import { warmCache, getCachedCharges, getCacheMeta } from './cache.js';
 import { refreshFromStripe } from './stripe-refresh.js';
 import { refreshPayPal } from './paypal-refresh.js';
+import { chatWithData } from './chat.js';
 import { startCron } from './cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -90,6 +91,28 @@ app.post('/api/refresh', auth, async (_req, res) => {
   }
   const added = (out.stripe?.added || 0) + (out.paypal?.added || 0);
   res.json({ ok: true, result: { added, ...out }, meta: getCacheMeta() });
+});
+
+app.post('/api/chat', auth, async (req, res) => {
+  if (!process.env.OPENROUTER_KEY) {
+    return res.status(503).json({ ok: false, error: 'Chat is not configured (OPENROUTER_KEY missing).' });
+  }
+  const history = Array.isArray(req.body?.messages) ? req.body.messages : null;
+  if (!history || !history.length) {
+    return res.status(400).json({ ok: false, error: 'Provide messages: [{role, content}].' });
+  }
+  // Keep only role/content, cap history length to bound cost
+  const clean = history
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    .slice(-12);
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const result = await chatWithData(clean, today);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[/api/chat] failed:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // ─── Static files & routing ──────────────────────────────────────────
