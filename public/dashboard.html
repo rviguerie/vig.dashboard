@@ -418,6 +418,13 @@ async function loadCharges() {
     }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+    if (data.warming) {
+      // Server just deployed and is still loading the cache — retry shortly.
+      document.getElementById('status-text').innerHTML =
+        '<span class="status-dot warn"></span>Server warming up — loading data…';
+      setTimeout(loadCharges, 2500);
+      return;
+    }
     serverMeta = { warmedAt: data.warmedAt, lastRefreshAt: data.lastRefreshAt, lastRefreshResult: data.lastRefreshResult, count: data.count };
     const { charges, products } = chargesFromBackend(data.charges || []);
     allCharges = charges;

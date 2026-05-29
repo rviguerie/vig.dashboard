@@ -69,6 +69,7 @@ app.get('/api/charges', auth, (_req, res) => {
   const meta = getCacheMeta();
   res.json({
     charges: getCachedCharges(),
+    warming: !meta.warmedAt, // cache still loading right after a deploy
     ...meta,
   });
 });
@@ -96,6 +97,9 @@ app.post('/api/refresh', auth, async (_req, res) => {
 app.post('/api/chat', auth, async (req, res) => {
   if (!process.env.OPENROUTER_KEY) {
     return res.status(503).json({ ok: false, error: 'Chat is not configured (OPENROUTER_KEY missing).' });
+  }
+  if (!getCacheMeta().warmedAt) {
+    return res.status(503).json({ ok: false, error: 'Data is still warming up — try again in a few seconds.' });
   }
   const history = Array.isArray(req.body?.messages) ? req.body.messages : null;
   if (!history || !history.length) {
@@ -129,23 +133,27 @@ app.use((req, res, next) => {
 
 // ─── Boot ────────────────────────────────────────────────────────────
 
-async function boot() {
+function boot() {
   console.log('[boot] starting…');
+
+  // Bind the port FIRST so the platform healthcheck passes within ~1s, then
+  // warm the cache in the background. This avoids a multi-second boot-to-listen
+  // gap (the cache reads ~40k Firestore docs) that made deploy swaps flaky.
+  const port = parseInt(process.env.PORT || '3000', 10);
+  app.listen(port, () => console.log(`[boot] listening on :${port}`));
+
   try {
     initFirebase();
     console.log('[boot] Firebase initialized');
-    await warmCache();
-    startCron();
+    warmCache()
+      .then(() => {
+        startCron();
+        console.log('[boot] cache warm complete; data + cron ready');
+      })
+      .catch((err) => console.error('[boot] cache warm failed:', err));
   } catch (err) {
-    console.error('[boot] startup failed:', err);
-    // Keep the process alive on cache warm failure so /api/health still
-    // responds. Refresh can recover once env / Firestore is fixed.
+    console.error('[boot] init failed:', err);
   }
-
-  const port = parseInt(process.env.PORT || '3000', 10);
-  app.listen(port, () => {
-    console.log(`[boot] listening on :${port}`);
-  });
 }
 
 boot();
