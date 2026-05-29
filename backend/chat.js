@@ -66,7 +66,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'monthly_series',
-      description: 'Monthly time series of one metric over a window. Use for trends and to feed make_chart.',
+      description: 'Monthly time series of one metric over a window. Use for trends and to feed make_chart. NOTE: metric "churn" returns a monthly churn RATE as a percentage (subs active at month start that lapsed by next month start ÷ active at month start), NOT a raw count. revenue/sales/rebills are EUR.',
       parameters: {
         type: 'object',
         properties: {
@@ -108,7 +108,7 @@ const TOOLS = [
         properties: {
           title: { type: 'string' },
           kind: { type: 'string', enum: ['revenue', 'churn'], description: 'Color theme: revenue (blue) or churn (red).' },
-          unit: { type: 'string', enum: ['eur', 'count'], description: 'How to format values.' },
+          unit: { type: 'string', enum: ['eur', 'count', 'percent'], description: 'How to format values: eur (€), count, or percent (%). Use percent for churn-rate charts.' },
           points: {
             type: 'array',
             items: { type: 'object', properties: { label: { type: 'string' }, value: { type: 'number' } }, required: ['label', 'value'] },

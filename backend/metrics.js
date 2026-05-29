@@ -234,30 +234,56 @@ export function monthlySeries({ metric = 'revenue', start_date, end_date, produc
   });
 
   if (metric === 'churn') {
-    // approximate: count subs whose coverage lapsed in each month
-    const histories = new Map();
-    for (const c of charges) {
+    // Monthly churn RATE (%). Uses FULL history up to asOf (no cutoff
+    // truncation) so subs that lapse early in the window are still counted.
+    // rate(M) = (subs active at start of M but NOT at start of M+1) / (subs active at start of M).
+    const subs = new Map(); // product||ident -> charges (asc)
+    for (const c of all) {
+      if (c.date > asOf) continue;
+      if (channel && c.channel !== channel) continue;
+      if (product && product !== 'Other' && c.product !== product) continue;
+      if (product === 'Other' && (!c.product || c.product === '__native_sub_unattributed__' || TRACKED.includes(c.product))) continue;
       if (c.status !== 'Paid' || c.net <= 0 || !c.product) continue;
       const id = c.email || c.customerId || c.invoiceId;
       if (!id) continue;
       const k = c.product + '||' + id;
-      if (!histories.has(k)) histories.set(k, []);
-      histories.get(k).push(c);
+      if (!subs.has(k)) subs.set(k, []);
+      subs.get(k).push(c);
     }
-    for (const [k, hist] of histories) {
-      hist.sort((a, b) => a.date - b.date);
-      const prod = k.split('||')[0];
-      let best = null;
-      for (const c of hist) {
-        const m = monthsFor(prod, c.amount);
-        if (m === null) continue;
-        if (!best || c.date > best.date) best = { activeUntil: new Date(c.date.getTime() + (m * 30 + 7) * DAY) };
+    for (const arr of subs.values()) arr.sort((a, b) => a.date - b.date);
+
+    const activeSet = (T) => {
+      const t = T.getTime();
+      const s = new Set();
+      for (const [k, arr] of subs) {
+        let bestDate = -1, bestUntil = -1;
+        for (const c of arr) {
+          const cd = c.date.getTime();
+          if (cd > t) break;
+          const m = monthsFor(c.product, c.amount);
+          if (m === null) continue;
+          if (cd > bestDate) { bestDate = cd; bestUntil = cd + (m * 30 + 7) * DAY; }
+        }
+        if (bestUntil >= t) s.add(k);
       }
-      if (best && best.activeUntil < asOf && best.activeUntil >= cutoff) {
-        ensure(ym(best.activeUntil));
-        buckets[ym(best.activeUntil)] += 1;
-      }
+      return s;
+    };
+
+    const points = [];
+    const m0 = new Date(cutoff); m0.setUTCDate(1); m0.setUTCHours(0, 0, 0, 0);
+    const mZ = new Date(asOf); mZ.setUTCDate(1); mZ.setUTCHours(0, 0, 0, 0);
+    for (let d = new Date(m0); d <= mZ; d.setUTCMonth(d.getUTCMonth() + 1)) {
+      const startM = new Date(d);
+      const nextM = new Date(d); nextM.setUTCMonth(nextM.getUTCMonth() + 1);
+      const evalNext = nextM > asOf ? asOf : nextM;
+      const aStart = activeSet(startM);
+      const aNext = activeSet(evalNext);
+      let lapsed = 0;
+      for (const k of aStart) if (!aNext.has(k)) lapsed++;
+      const rate = aStart.size > 0 ? (100 * lapsed / aStart.size) : 0;
+      points.push({ month: ym(startM), value: Math.round(rate * 10) / 10, lapsed, base: aStart.size });
     }
+    return { metric: 'churn', unit: 'percent', window: { start: ymd(cutoff), end: ymd(asOf) }, filter: { product: product || 'all', channel: channel || 'all' }, points };
   } else {
     // revenue | sales | rebills
     const firstDate = new Map();

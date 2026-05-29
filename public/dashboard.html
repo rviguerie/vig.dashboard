@@ -194,16 +194,6 @@ footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
         <div class="metric-value xl" id="m-active-total">—</div>
         <div class="metric-sub" id="m-active-sub">distinct customers</div>
       </div>
-      <div class="metric green">
-        <div class="metric-label">MRR run-rate</div>
-        <div class="metric-value xl" id="m-mrr">—</div>
-        <div class="metric-sub">monthly + annual prorated</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Projected rebills · next 30d</div>
-        <div class="metric-value xl" id="m-proj">—</div>
-        <div class="metric-sub" id="m-proj-count">—</div>
-      </div>
       <div class="metric orange">
         <div class="metric-label">Cancelled (in window)</div>
         <div class="metric-value xl" id="m-cancelled">—</div>
@@ -260,7 +250,7 @@ footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
         <div id="rebills-chart"></div>
       </div>
       <div class="chart-card">
-        <div class="chart-title churn">Churn <span class="accent">subs that lapsed per month</span></div>
+        <div class="chart-title churn">Churn rate <span class="accent">% of active subs that lapsed each month</span></div>
         <div id="churn-chart"></div>
       </div>
     </div>
@@ -635,8 +625,39 @@ function compute(filters) {
     } else if (info.activeUntil >= cutoff && info.activeUntil < asOf) {
       if (TRACKED.includes(product)) stats[product].cancelled++;
       cancelledIdents.add(ident);
-      const mk = ym(info.activeUntil);
-      churnMonthly[mk] = (churnMonthly[mk] || 0) + 1;
+    }
+  }
+
+  // Monthly churn RATE (%): full history up to asOf, active-set-difference.
+  // rate(M) = (subs active at start of M but not at start of M+1) / (active at start of M).
+  {
+    const subs = new Map();
+    for (const c of charges) {
+      if (c.status !== 'Paid' || c.net <= 0 || !c.product) continue;
+      const id = c.email || c.customerId || c.invoiceId;
+      if (!id) continue;
+      const k = c.product + '||' + id;
+      if (!subs.has(k)) subs.set(k, []);
+      subs.get(k).push(c);
+    }
+    for (const arr of subs.values()) arr.sort((a, b) => a.date - b.date);
+    const activeSet = (T) => {
+      const t = T.getTime(); const set = new Set();
+      for (const [k, arr] of subs) {
+        let bd = -1, bu = -1;
+        for (const c of arr) { const cd = c.date.getTime(); if (cd > t) break; const mm = monthsFor(c.product, c.amount); if (mm === null) continue; if (cd > bd) { bd = cd; bu = cd + (mm * 30 + 7) * 86400000; } }
+        if (bu >= t) set.add(k);
+      }
+      return set;
+    };
+    const cm0 = new Date(cutoff); cm0.setUTCDate(1); cm0.setUTCHours(0, 0, 0, 0);
+    const cmZ = new Date(asOf); cmZ.setUTCDate(1); cmZ.setUTCHours(0, 0, 0, 0);
+    for (let d = new Date(cm0); d <= cmZ; d.setUTCMonth(d.getUTCMonth() + 1)) {
+      const startM = new Date(d); const nextM = new Date(d); nextM.setUTCMonth(nextM.getUTCMonth() + 1);
+      const evalNext = nextM > asOf ? asOf : nextM;
+      const aStart = activeSet(startM), aNext = activeSet(evalNext);
+      let lapsed = 0; for (const k of aStart) if (!aNext.has(k)) lapsed++;
+      churnMonthly[ym(startM)] = aStart.size > 0 ? Math.round(1000 * lapsed / aStart.size) / 10 : 0;
     }
   }
 
@@ -738,14 +759,6 @@ function render(m) {
 
   document.getElementById('m-active-total').textContent = fmt(m.distinctActive);
 
-  const totalMrr = m.byProduct.filter(p => p.isIncluded).reduce((s, p) => s + p.mrrEur, 0);
-  document.getElementById('m-mrr').textContent = eur(totalMrr) + '/mo';
-
-  const projTotalEur = m.byProduct.filter(p => p.isIncluded).reduce((s, p) => s + p.proj30Eur, 0);
-  const projTotalCount = m.byProduct.filter(p => p.isIncluded).reduce((s, p) => s + p.proj30Count, 0);
-  document.getElementById('m-proj').textContent = eur(projTotalEur);
-  document.getElementById('m-proj-count').textContent = fmt(projTotalCount) + ' rebills expected';
-
   document.getElementById('m-cancelled').textContent = fmt(m.cancelledCount);
   document.getElementById('m-cancelled-sub').textContent = `of ${fmt(m.cohortSize)} active at window start`;
   document.getElementById('m-churn-pct').textContent = m.churnPct.toFixed(1) + '%';
@@ -815,9 +828,10 @@ function render(m) {
   const salesValues   = months.map(mk => (m.salesMonthly[mk]?.eur   || 0) + (m.salesMonthly[mk]?.usd   || 0) / rate);
   const rebillsValues = months.map(mk => (m.rebillsMonthly[mk]?.eur || 0) + (m.rebillsMonthly[mk]?.usd || 0) / rate);
   const churnValues   = months.map(mk => m.churnMonthly[mk] || 0);
+  const pctFmt = (n) => (Math.round(n * 10) / 10) + '%';
   renderChartBars('sales-chart',   months, salesValues,   'sales',   eur);
   renderChartBars('rebills-chart', months, rebillsValues, 'rebills', eur);
-  renderChartBars('churn-chart',   months, churnValues,   'churn',   fmt);
+  renderChartBars('churn-chart',   months, churnValues,   'churn',   pctFmt);
 }
 
 function recompute() {
@@ -885,7 +899,7 @@ document.querySelectorAll('.chat-empty .ex').forEach(el => {
 
 function chatChartHTML(chart) {
   const max = Math.max(...chart.points.map(p => p.value), 1);
-  const fmtVal = (v) => chart.unit === 'count' ? fmt(v) : eur(v);
+  const fmtVal = (v) => chart.unit === 'count' ? fmt(v) : chart.unit === 'percent' ? ((Math.round(v * 10) / 10) + '%') : eur(v);
   const bars = chart.points.map(p => {
     const h = max > 0 ? (p.value / max) * 100 : 0;
     return `<div class="cb" title="${p.label}: ${fmtVal(p.value)}"><div class="bt"><div class="bf ${chart.kind}" style="height:${h}%"></div></div><div class="bl">${p.label}</div></div>`;
