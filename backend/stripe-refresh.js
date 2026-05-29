@@ -10,6 +10,7 @@
 
 import { getDb } from './firebase.js';
 import { getCachedCharges, appendToCache, recordRefresh } from './cache.js';
+import { enrichCharges } from './stripe-enrich.js';
 
 const COLLECTION = 'charges';
 const STRIPE_BASE = 'https://api.stripe.com/v1';
@@ -135,6 +136,15 @@ export async function refreshFromStripe() {
   await writeBatchToFirestore(fresh);
   const { added, updated } = appendToCache(fresh);
 
+  // Attribute any newly-arrived native subs (resolve product via invoice)
+  let enrichedCount = 0;
+  try {
+    const e = await enrichCharges(fresh);
+    enrichedCount = e.enriched;
+  } catch (err) {
+    console.error('[refresh] native-sub enrichment failed (non-fatal):', err.message);
+  }
+
   const result = {
     sinceTs,
     pages,
@@ -142,6 +152,7 @@ export async function refreshFromStripe() {
     fetched: fresh.length,
     added,
     updated,
+    enriched: enrichedCount,
     durationMs: Date.now() - t0,
     finishedAt: new Date().toISOString(),
   };

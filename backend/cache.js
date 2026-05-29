@@ -77,3 +77,19 @@ export function recordRefresh(result) {
   lastRefreshAt = new Date().toISOString();
   lastRefreshResult = result;
 }
+
+/**
+ * Patch fields onto already-cached charges in place (used by enrichment).
+ * `updates` is an array of { id, ...fieldsToMerge }.
+ */
+export function updateCachedCharges(updates) {
+  let n = 0;
+  for (const u of updates) {
+    const idx = byId.get(u.id);
+    if (idx !== undefined) {
+      Object.assign(charges[idx], u);
+      n++;
+    }
+  }
+  return n;
+}
