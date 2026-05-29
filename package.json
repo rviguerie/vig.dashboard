@@ -8,6 +8,7 @@
     "start": "node backend/server.js",
     "dev": "node --watch backend/server.js",
     "seed": "node backend/seed.js",
+    "backfill-paypal": "node backend/paypal-backfill.js",
     "refresh-once": "node -e \"import('./backend/stripe-refresh.js').then(m=>m.refreshFromStripe()).then(r=>{console.log(r);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\""
   },
   "engines": {

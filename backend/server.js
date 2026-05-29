@@ -25,6 +25,7 @@ import { initFirebase } from './firebase.js';
 import { requireAuth } from './auth.js';
 import { warmCache, getCachedCharges, getCacheMeta } from './cache.js';
 import { refreshFromStripe } from './stripe-refresh.js';
+import { refreshPayPal } from './paypal-refresh.js';
 import { startCron } from './cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,13 +73,23 @@ app.get('/api/charges', auth, (_req, res) => {
 });
 
 app.post('/api/refresh', auth, async (_req, res) => {
+  const out = {};
   try {
-    const result = await refreshFromStripe();
-    res.json({ ok: true, result, meta: getCacheMeta() });
+    out.stripe = await refreshFromStripe();
   } catch (err) {
-    console.error('[/api/refresh] failed:', err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error('[/api/refresh] Stripe failed:', err);
+    out.stripeError = err.message;
   }
+  if (process.env.PAYPAL_CLIENT_ID) {
+    try {
+      out.paypal = await refreshPayPal();
+    } catch (err) {
+      console.error('[/api/refresh] PayPal failed:', err);
+      out.paypalError = err.message;
+    }
+  }
+  const added = (out.stripe?.added || 0) + (out.paypal?.added || 0);
+  res.json({ ok: true, result: { added, ...out }, meta: getCacheMeta() });
 });
 
 // ─── Static files & routing ──────────────────────────────────────────

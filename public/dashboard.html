@@ -463,7 +463,11 @@ function compute(filters) {
   const totalRebills = { eur: 0, usd: 0 };
   const salesCount = { count: 0 };
   const rebillsCount = { count: 0 };
-  const channels = { kartra_orchestrated: { eur: 0, usd: 0 }, native_stripe_sub: { eur: 0, usd: 0 } };
+  const channels = {
+    kartra_orchestrated: { eur: 0, usd: 0 },
+    native_stripe_sub: { eur: 0, usd: 0 },
+    paypal: { eur: 0, usd: 0 },
+  };
   const refunds = { eur: 0, usd: 0 };
   const salesMonthly = {};
   const rebillsMonthly = {};
@@ -476,6 +480,7 @@ function compute(filters) {
       if (!revenue[p]) revenue[p] = { eur: 0, usd: 0 };
       revenue[p][c.currency] = (revenue[p][c.currency] || 0) + c.net;
       totals[c.currency] = (totals[c.currency] || 0) + c.net;
+      if (!channels[c.channel]) channels[c.channel] = { eur: 0, usd: 0 };
       channels[c.channel][c.currency] = (channels[c.channel][c.currency] || 0) + c.net;
       const mk = ym(c.date);
 
@@ -690,8 +695,9 @@ function render(m) {
   const cp = document.getElementById('channel-pills');
   cp.innerHTML = '';
   const channels = [
-    { key: 'kartra_orchestrated', label: 'Kartra-orchestrated (legacy)' },
+    { key: 'kartra_orchestrated', label: 'Kartra-orchestrated (Stripe, legacy)' },
     { key: 'native_stripe_sub', label: 'Native Stripe subs (new)' },
+    { key: 'paypal', label: 'PayPal' },
   ];
   const totalAll = m.totals.eur + m.totals.usd / rate;
   for (const ch of channels) {

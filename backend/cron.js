@@ -7,6 +7,7 @@
 
 import cron from 'node-cron';
 import { refreshFromStripe } from './stripe-refresh.js';
+import { refreshPayPal } from './paypal-refresh.js';
 
 const DEFAULT_SCHEDULE = '0 * * * *'; // top of every hour
 
@@ -18,12 +19,20 @@ export function startCron() {
   const expr = cron.validate(schedule) ? schedule : DEFAULT_SCHEDULE;
 
   cron.schedule(expr, async () => {
+    // Run both sources; isolate failures so one source can't block the other.
     try {
       await refreshFromStripe();
     } catch (err) {
-      console.error('[cron] refresh failed:', err);
+      console.error('[cron] Stripe refresh failed:', err);
+    }
+    if (process.env.PAYPAL_CLIENT_ID) {
+      try {
+        await refreshPayPal();
+      } catch (err) {
+        console.error('[cron] PayPal refresh failed:', err);
+      }
     }
   });
 
-  console.log(`[cron] scheduled refreshFromStripe on "${expr}"`);
+  console.log(`[cron] scheduled Stripe + PayPal refresh on "${expr}"`);
 }
