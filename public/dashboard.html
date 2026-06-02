@@ -294,7 +294,7 @@ const PRICE_RULES = {
     [261, 12], [268, 12], [300.50, 12], [351, 12], [441, 12],
   ],
   "Vig Village": [
-    [60, 1], [99, 1], [198, 2], [540, 12],
+    [60, 1], [99, 1], [198, 2], [540, 12], [594, 12], [792, 12], [891, 12],
   ],
   "Vitamin V EXTRA STRENGTH": [
     [29, 1],
@@ -856,11 +856,8 @@ function populateProductFilter() {
     sel.appendChild(o);
   }
   const oOther = document.createElement('option');
-  oOther.value = '__other__'; oOther.textContent = '— Other tracked products —';
+  oOther.value = '__other__'; oOther.textContent = '— Other (untracked products) —';
   sel.appendChild(oOther);
-  const oNative = document.createElement('option');
-  oNative.value = '__native__'; oNative.textContent = '— Native Stripe (unattributed) —';
-  sel.appendChild(oNative);
 }
 
 function setRange(days) {
