@@ -488,15 +488,7 @@ function compute(filters) {
   const asOf = end, cutoff = start;
   const charges = allCharges.filter(c => {
     if (c.date > asOf) return false;
-    if (productFilter !== '__all__') {
-      if (productFilter === '__other__') {
-        if (!c.product || c.product === '__native_sub_unattributed__' || TRACKED.includes(c.product)) return false;
-      } else if (productFilter === '__native__') {
-        if (c.product !== '__native_sub_unattributed__') return false;
-      } else {
-        if (c.product !== productFilter) return false;
-      }
-    }
+    if (productFilter !== '__all__' && c.product !== productFilter) return false;
     return true;
   });
   if (!charges.length) return null;
@@ -593,11 +585,10 @@ function compute(filters) {
     if (best) lastCharge.set(key, best);
   }
 
-  const includeKey = (p) =>
-    productFilter === '__all__' ? TRACKED.includes(p) :
-    productFilter === '__other__' ? !TRACKED.includes(p) && p !== '__native_sub_unattributed__' :
-    productFilter === '__native__' ? p === '__native_sub_unattributed__' :
-    p === productFilter;
+  // Per-product table inclusion: "All products" shows the main tracked set;
+  // any specific filter shows only that product (table hidden later if the
+  // filtered product isn't in the tracked set — headline tiles still apply).
+  const includeKey = (p) => productFilter === '__all__' ? TRACKED.includes(p) : p === productFilter;
 
   const stats = {};
   for (const p of TRACKED) {
@@ -792,6 +783,11 @@ function render(m) {
 
   const tbody = document.getElementById('product-tbody');
   tbody.innerHTML = '';
+  // Hide the per-product table when the filtered product isn't one of the
+  // main tracked set — the table only has rows for tracked products.
+  const productSection = document.getElementById('product-table').closest('.section');
+  const anyIncluded = m.byProduct.some((p) => p.isIncluded);
+  if (productSection) productSection.style.display = anyIncluded ? '' : 'none';
   let tA = 0, tR = 0, tM = 0, tN = 0, tC = 0, tPE = 0;
   for (const p of m.byProduct) {
     if (!p.isIncluded) continue;
@@ -850,14 +846,32 @@ function recompute() {
 function populateProductFilter() {
   const sel = document.getElementById('filter-product');
   sel.innerHTML = '<option value="__all__">All products</option>';
-  for (const p of TRACKED) {
-    const o = document.createElement('option');
-    o.value = p; o.textContent = p;
-    sel.appendChild(o);
+
+  // Main tracked products in a priority group at the top
+  const trackedInData = TRACKED.filter((p) => allProductNames.has(p));
+  if (trackedInData.length) {
+    const og = document.createElement('optgroup');
+    og.label = 'Main products';
+    for (const p of trackedInData) {
+      const o = document.createElement('option');
+      o.value = p; o.textContent = p;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
   }
-  const oOther = document.createElement('option');
-  oOther.value = '__other__'; oOther.textContent = '— Other (untracked products) —';
-  sel.appendChild(oOther);
+
+  // Every other product seen in the data, alphabetical
+  const others = [...allProductNames].filter((p) => !TRACKED.includes(p)).sort((a, b) => a.localeCompare(b));
+  if (others.length) {
+    const og = document.createElement('optgroup');
+    og.label = 'All other products';
+    for (const p of others) {
+      const o = document.createElement('option');
+      o.value = p; o.textContent = p;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
 }
 
 function setRange(days) {
