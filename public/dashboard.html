@@ -849,27 +849,43 @@ function populateProductFilter() {
   const sel = document.getElementById('filter-product');
   sel.innerHTML = '<option value="__all__">All products</option>';
 
-  // Main tracked products in a priority group at the top
+  // Count charges per product in the last 365 days so the dropdown only
+  // shows products that are actually relevant (the cache has ~2,800 distinct
+  // historical product names; almost all are one-offs from years ago).
+  const cutoff = dataMaxDate ? dataMaxDate.getTime() - 365 * 86400000 : 0;
+  const recentCount = {};
+  for (const c of allCharges) {
+    if (!c.product || c.product === '__native_sub_unattributed__') continue;
+    if (c.date.getTime() < cutoff) continue;
+    recentCount[c.product] = (recentCount[c.product] || 0) + 1;
+  }
+  const RECENT_MIN = 3; // hide products with <3 charges in last 12mo (legacy noise)
+  const recent = new Set(Object.entries(recentCount).filter(([, n]) => n >= RECENT_MIN).map(([p]) => p));
+
+  const trunc = (s) => s.length > 60 ? s.slice(0, 57) + '…' : s;
+
+  // Main tracked products (always show, even if recent-count is low)
   const trackedInData = TRACKED.filter((p) => allProductNames.has(p));
   if (trackedInData.length) {
     const og = document.createElement('optgroup');
     og.label = 'Main products';
     for (const p of trackedInData) {
       const o = document.createElement('option');
-      o.value = p; o.textContent = p;
+      o.value = p; o.textContent = trunc(p);
       og.appendChild(o);
     }
     sel.appendChild(og);
   }
 
-  // Every other product seen in the data, alphabetical
-  const others = [...allProductNames].filter((p) => !TRACKED.includes(p)).sort((a, b) => a.localeCompare(b));
+  // Other products active in the last 12 months, alphabetical
+  const others = [...recent].filter((p) => !TRACKED.includes(p)).sort((a, b) => a.localeCompare(b));
   if (others.length) {
     const og = document.createElement('optgroup');
-    og.label = 'All other products';
+    og.label = 'Other products (active last 12mo)';
     for (const p of others) {
       const o = document.createElement('option');
-      o.value = p; o.textContent = p;
+      o.value = p; o.textContent = trunc(p);
+      o.title = p; // full name on hover
       og.appendChild(o);
     }
     sel.appendChild(og);
