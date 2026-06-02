@@ -336,6 +336,7 @@ function monthsFor(product, amount) {
 
 // ─── State ────────────────────────────────────────────────────────────
 let allCharges = [];
+let allProductNames = new Set();
 let dataMinDate = null;
 let dataMaxDate = null;
 let currentMetrics = null;
@@ -428,6 +429,7 @@ async function loadCharges() {
     serverMeta = { warmedAt: data.warmedAt, lastRefreshAt: data.lastRefreshAt, lastRefreshResult: data.lastRefreshResult, count: data.count };
     const { charges, products } = chargesFromBackend(data.charges || []);
     allCharges = charges;
+    allProductNames = products;
     if (!charges.length) {
       document.getElementById('empty').style.display = 'block';
       document.getElementById('dashboard').style.display = 'none';
