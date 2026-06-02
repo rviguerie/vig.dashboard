@@ -594,7 +594,7 @@ function compute(filters) {
 
   const stats = {};
   for (const p of TRACKED) {
-    stats[p] = { active: 0, mrr: 0, monthly: 0, annual: 0, other: 0, new30: 0, cancelled: 0, projCount: 0, projAmt: 0 };
+    stats[p] = { active: 0, mrr: 0, monthly: 0, annual: 0, other: 0, otherCadences: new Set(), new30: 0, cancelled: 0, projCount: 0, projAmt: 0 };
   }
   const activeIdents = new Set();
   const cohortStartIdents = new Set();
@@ -614,7 +614,7 @@ function compute(filters) {
         s.mrr += info.impliedMrr;
         if (info.months >= 11) s.annual++;
         else if (info.months === 1) s.monthly++;
-        else s.other++;
+        else { s.other++; s.otherCadences.add(info.months); }
         if (info.firstDate >= cutoff && info.firstDate <= asOf) s.new30++;
         if (info.activeUntil >= asOf && info.activeUntil <= in30) {
           s.projCount++;
@@ -690,7 +690,7 @@ function compute(filters) {
     cohortSize, cancelledCount, churnPct,
     byProduct: TRACKED.map(p => ({
       product: p,
-      active: stats[p].active, monthlySubs: stats[p].monthly, annualSubs: stats[p].annual, otherSubs: stats[p].other,
+      active: stats[p].active, monthlySubs: stats[p].monthly, annualSubs: stats[p].annual, otherSubs: stats[p].other, otherCadences: [...stats[p].otherCadences].sort((a, b) => a - b),
       revenueEur: (revenue[p]?.eur || 0), revenueUsd: (revenue[p]?.usd || 0),
       mrrEur: stats[p].mrr, new30: stats[p].new30, cancelled: stats[p].cancelled,
       proj30Count: stats[p].projCount, proj30Eur: stats[p].projAmt,
@@ -797,7 +797,7 @@ function render(m) {
     tr.innerHTML =
       `<td class="pname">${p.product}</td>` +
       `<td class="num">${fmt(p.active)}</td>` +
-      `<td class="num dim">${fmt(p.monthlySubs)} M / ${fmt(p.annualSubs)} A${p.otherSubs ? ' / ' + fmt(p.otherSubs) + ' x' : ''}</td>` +
+      `<td class="num dim">${fmt(p.monthlySubs)} M / ${fmt(p.annualSubs)} A${p.otherSubs ? ' / ' + fmt(p.otherSubs) + ' ' + (p.otherCadences && p.otherCadences.length === 1 ? p.otherCadences[0] + '-mo' : 'multi-mo') : ''}</td>` +
       `<td class="num">${eur(p.revenueEur)}</td>` +
       `<td class="num">${eur(p.mrrEur)}</td>` +
       `<td class="num">${fmt(p.new30)}</td>` +
