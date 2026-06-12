@@ -14,7 +14,7 @@ import { runSql, SQL_COLUMNS } from './sql.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6';
-const MAX_ROUNDS = 6;
+const MAX_ROUNDS = 12;
 
 function systemPrompt(today) {
   const schema = getSchema();
@@ -46,7 +46,10 @@ function systemPrompt(today) {
     '- COUNTING CUSTOMERS: always dedupe to one row per customer BEFORE counting or joining. Use COUNT(DISTINCT customer_email), or a subquery that does GROUP BY customer_email. NEVER count rows of a charges-to-charges join as customers — that multiplies charge pairs and massively overcounts.',
     '- LTV per customer: SELECT AVG(t) ltv FROM (SELECT customer_email, SUM(net) t FROM charges WHERE status=\'Paid\' AND product=\'Mr. Vigs Atomic Homework\' AND customer_email<>\'\' GROUP BY customer_email).',
     '- "Bought both X and Y": join two per-customer subqueries (each already GROUP BY customer_email) on customer_email; the result has one row per shared customer. Example: SELECT COUNT(*) n FROM (SELECT customer_email FROM charges WHERE status=\'Paid\' AND product=\'X\' AND customer_email<>\'\' GROUP BY customer_email) a JOIN (SELECT customer_email FROM charges WHERE status=\'Paid\' AND product=\'Y\' AND customer_email<>\'\' GROUP BY customer_email) b ON a.customer_email=b.customer_email.',
-    '- After running a query, sanity-check the magnitude; if a customer count exceeds the total distinct customers, your query is double-counting — fix it before answering.',
+    '- COHORT analysis: every row carries cohort_month = the customer\'s first-purchase month (\'YYYY-MM\'). For "the Jan 2026 cohort" filter cohort_month=\'2026-01\' — no MIN/join needed. Example LTV for that cohort: SELECT AVG(t) ltv, COUNT(*) customers FROM (SELECT customer_email, SUM(net) t FROM charges WHERE status=\'Paid\' AND cohort_month=\'2026-01\' GROUP BY customer_email).',
+    '- For earliest/latest/first-purchase use MIN(created)/MAX(created) (numeric). NEVER MIN/MAX the date string — alasql returns empty for it.',
+    '- Group by month with the ym column (\'YYYY-MM\').',
+    '- After running a query, sanity-check the magnitude; if a customer count exceeds total distinct customers, or a result is empty/zero unexpectedly, your query is wrong — revise it before answering.',
   ].join('\n');
 }
 

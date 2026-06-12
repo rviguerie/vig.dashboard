@@ -23,8 +23,10 @@ const TABLE = 'charges';
 // Columns exposed to the agent (derived from each raw charge).
 export const SQL_COLUMNS = [
   { name: 'id', desc: 'charge id (Stripe ch_… or PayPal txn id)' },
-  { name: 'date', desc: 'charge date, YYYY-MM-DD (UTC)' },
-  { name: 'created', desc: 'unix timestamp (seconds)' },
+  { name: 'date', desc: 'charge date, YYYY-MM-DD string (use for = and range filters; do NOT use MIN/MAX on it — alasql cannot aggregate strings, use created instead)' },
+  { name: 'ym', desc: "charge month as 'YYYY-MM' string (handy for GROUP BY month)" },
+  { name: 'cohort_month', desc: "the customer's FIRST paid-charge month as 'YYYY-MM' — use this for cohort analysis (e.g. cohort_month='2026-01')" },
+  { name: 'created', desc: 'unix timestamp seconds (numeric — use this for MIN/MAX / earliest / latest / first-purchase logic)' },
   { name: 'amount', desc: 'gross amount in the charge currency' },
   { name: 'amount_refunded', desc: 'refunded portion' },
   { name: 'net', desc: 'amount - amount_refunded' },
@@ -48,14 +50,38 @@ function ensureTable() {
   }
   // Rebuild data fresh each call (cheap at ~40k rows) so no query can leave
   // mutated state behind for the next one.
+  const cache = getCachedCharges();
+
+  // Pass 1: each customer's first Paid-charge month → acquisition cohort.
+  // Pre-computing this avoids the AI needing MIN() on a string date column,
+  // which alasql cannot aggregate (it silently returns empty).
+  const firstTs = new Map();
+  for (const c of cache) {
+    if (c.status !== 'Paid') continue;
+    const email = (c.customer_email || '').toLowerCase();
+    if (!email) continue;
+    const ts = parseInt(c.created, 10);
+    if (!ts) continue;
+    const cur = firstTs.get(email);
+    if (cur === undefined || ts < cur) firstTs.set(email, ts);
+  }
+  const cohortOf = (email) => {
+    const ts = firstTs.get(email);
+    return ts ? new Date(ts * 1000).toISOString().slice(0, 7) : '';
+  };
+
   const rows = [];
-  for (const c of getCachedCharges()) {
+  for (const c of cache) {
     const ts = parseInt(c.created, 10);
     const amount = parseFloat(c.amount || 0);
     const refunded = parseFloat(c.amount_refunded || 0);
+    const email = (c.customer_email || '').toLowerCase();
+    const iso = ts ? new Date(ts * 1000).toISOString() : null;
     rows.push({
       id: c.id,
-      date: ts ? new Date(ts * 1000).toISOString().slice(0, 10) : null,
+      date: iso ? iso.slice(0, 10) : null,
+      ym: iso ? iso.slice(0, 7) : null,
+      cohort_month: cohortOf(email),
       created: ts || 0,
       amount,
       amount_refunded: refunded,
@@ -63,7 +89,7 @@ function ensureTable() {
       currency: (c.currency || '').toLowerCase(),
       status: c.status || '',
       product: c.description || '',
-      customer_email: (c.customer_email || '').toLowerCase(),
+      customer_email: email,
       customer_id: c.customer_id || '',
       invoice_id: c.invoice_id || '',
       channel: c.channel || '',
