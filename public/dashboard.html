@@ -36,6 +36,20 @@ h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
 .filter-bar input[type=number]{width:70px;text-align:right}
 .filter-bar .preset{font-size:11px;color:#9ca3af;cursor:pointer;padding:4px 8px;border-radius:4px}
 .filter-bar .preset:hover{background:#1a1d2e;color:#e8e9ec}
+.ms{position:relative;display:inline-block}
+.ms-btn{font-size:13px;padding:5px 10px;border:1px solid #2d3148;border-radius:6px;background:#1a1d2e;color:#e8e9ec;font-family:inherit;cursor:pointer;min-width:190px;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ms-btn:hover{border-color:#4a5080}
+.ms-caret{color:#6b7280;font-size:10px}
+.ms-panel{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:#161926;border:1px solid #2d3148;border-radius:8px;padding:6px;min-width:260px;max-height:340px;overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+.ms-panel.open{display:block}
+.ms-grp{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;padding:8px 8px 4px}
+.ms-opt{display:flex;align-items:center;gap:8px;font-size:13px;color:#d6d8de;padding:5px 8px;border-radius:5px;cursor:pointer;white-space:nowrap}
+.ms-opt:hover{background:#1a1d2e}
+.ms-opt input{accent-color:#6c7ab0;cursor:pointer;flex-shrink:0}
+.ms-opt.all{border-bottom:1px solid #1e2035;margin-bottom:2px;font-weight:500;color:#e8e9ec}
+.ms-actions{display:flex;gap:6px;padding:6px 8px 2px;border-top:1px solid #1e2035;margin-top:4px}
+.ms-actions button{font-size:11px;color:#9ca3af;background:transparent;border:1px solid #2d3148;border-radius:5px;padding:3px 8px;cursor:pointer;font-family:inherit}
+.ms-actions button:hover{background:#1a1d2e;color:#e8e9ec}
 .section{margin-bottom:1.75rem}
 .section-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #1e2035}
 .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
@@ -144,9 +158,10 @@ footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
   <div class="filter-bar">
     <div class="filter-group">
       <label>Product</label>
-      <select id="filter-product">
-        <option value="__all__">All products</option>
-      </select>
+      <div class="ms" id="ms-product">
+        <button type="button" class="ms-btn" id="ms-btn">All products <span class="ms-caret">▾</span></button>
+        <div class="ms-panel" id="ms-panel"></div>
+      </div>
     </div>
     <div class="filter-group">
       <label>From</label>
@@ -338,6 +353,7 @@ function monthsFor(product, amount) {
 // ─── State ────────────────────────────────────────────────────────────
 let allCharges = [];
 let allProductNames = new Set();
+let selectedProducts = new Set(); // empty = all products
 let dataMinDate = null;
 let dataMaxDate = null;
 let currentMetrics = null;
@@ -479,7 +495,8 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
 // ─── Compute & render (identical logic to standalone dashboard) ──────
 function getFilters() {
   return {
-    product: document.getElementById('filter-product').value,
+    // selectedProducts: empty Set means "all products"
+    products: selectedProducts,
     start: new Date(document.getElementById('filter-start').value + 'T00:00:00Z'),
     end: new Date(document.getElementById('filter-end').value + 'T23:59:59Z'),
     rate: parseFloat(document.getElementById('rate-input').value) || 1.10,
@@ -487,11 +504,12 @@ function getFilters() {
 }
 
 function compute(filters) {
-  const { product: productFilter, start, end } = filters;
+  const { products: productSel, start, end } = filters;
+  const allSelected = !productSel || productSel.size === 0;
   const asOf = end, cutoff = start;
   const charges = allCharges.filter(c => {
     if (c.date > asOf) return false;
-    if (productFilter !== '__all__' && c.product !== productFilter) return false;
+    if (!allSelected && !productSel.has(c.product)) return false;
     return true;
   });
   if (!charges.length) return null;
@@ -591,7 +609,7 @@ function compute(filters) {
   // Per-product table inclusion: "All products" shows the main tracked set;
   // any specific filter shows only that product (table hidden later if the
   // filtered product isn't in the tracked set — headline tiles still apply).
-  const includeKey = (p) => productFilter === '__all__' ? TRACKED.includes(p) : p === productFilter;
+  const includeKey = (p) => allSelected ? TRACKED.includes(p) : productSel.has(p);
 
   const stats = {};
   for (const p of TRACKED) {
@@ -847,8 +865,7 @@ function recompute() {
 }
 
 function populateProductFilter() {
-  const sel = document.getElementById('filter-product');
-  sel.innerHTML = '<option value="__all__">All products</option>';
+  const panel = document.getElementById('ms-panel');
 
   // Count charges per product in the last 365 days so the dropdown only
   // shows products that are actually relevant (the cache has ~2,800 distinct
@@ -862,35 +879,63 @@ function populateProductFilter() {
   }
   const RECENT_MIN = 3; // hide products with <3 charges in last 12mo (legacy noise)
   const recent = new Set(Object.entries(recentCount).filter(([, n]) => n >= RECENT_MIN).map(([p]) => p));
+  const trunc = (s) => s.length > 55 ? s.slice(0, 52) + '…' : s;
 
-  const trunc = (s) => s.length > 60 ? s.slice(0, 57) + '…' : s;
-
-  // Main tracked products (always show, even if recent-count is low)
+  let html = '<label class="ms-opt all"><input type="checkbox" id="ms-all"> All products</label>';
   const trackedInData = TRACKED.filter((p) => allProductNames.has(p));
   if (trackedInData.length) {
-    const og = document.createElement('optgroup');
-    og.label = 'Main products';
+    html += '<div class="ms-grp">Main products</div>';
     for (const p of trackedInData) {
-      const o = document.createElement('option');
-      o.value = p; o.textContent = trunc(p);
-      og.appendChild(o);
+      html += `<label class="ms-opt"><input type="checkbox" class="ms-cb" value="${esc(p)}">${esc(trunc(p))}</label>`;
     }
-    sel.appendChild(og);
   }
-
-  // Other products active in the last 12 months, alphabetical
   const others = [...recent].filter((p) => !TRACKED.includes(p)).sort((a, b) => a.localeCompare(b));
   if (others.length) {
-    const og = document.createElement('optgroup');
-    og.label = 'Other products (active last 12mo)';
+    html += '<div class="ms-grp">Other products (active last 12mo)</div>';
     for (const p of others) {
-      const o = document.createElement('option');
-      o.value = p; o.textContent = trunc(p);
-      o.title = p; // full name on hover
-      og.appendChild(o);
+      html += `<label class="ms-opt" title="${esc(p)}"><input type="checkbox" class="ms-cb" value="${esc(p)}">${esc(trunc(p))}</label>`;
     }
-    sel.appendChild(og);
   }
+  html += '<div class="ms-actions"><button type="button" id="ms-clear">Clear (all)</button></div>';
+  panel.innerHTML = html;
+
+  // Wire checkbox events
+  panel.querySelectorAll('.ms-cb').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedProducts.add(cb.value); else selectedProducts.delete(cb.value);
+      syncProductFilterUI();
+      recompute();
+    });
+  });
+  document.getElementById('ms-all').addEventListener('change', (e) => {
+    if (e.target.checked) selectedProducts.clear(); // "all" = empty selection
+    syncProductFilterUI();
+    recompute();
+  });
+  document.getElementById('ms-clear').addEventListener('click', () => {
+    selectedProducts.clear();
+    syncProductFilterUI();
+    recompute();
+  });
+  syncProductFilterUI();
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function syncProductFilterUI() {
+  const allOn = selectedProducts.size === 0;
+  const allBox = document.getElementById('ms-all');
+  if (allBox) allBox.checked = allOn;
+  document.querySelectorAll('#ms-panel .ms-cb').forEach((cb) => {
+    cb.checked = selectedProducts.has(cb.value);
+  });
+  const btn = document.getElementById('ms-btn');
+  const label = allOn ? 'All products'
+    : selectedProducts.size === 1 ? [...selectedProducts][0]
+    : selectedProducts.size + ' products';
+  btn.innerHTML = `${esc(label.length > 26 ? label.slice(0, 24) + '…' : label)} <span class="ms-caret">▾</span>`;
 }
 
 function setRange(days) {
@@ -905,7 +950,13 @@ function setRange(days) {
 }
 
 document.getElementById('rate-input').addEventListener('input', recompute);
-document.getElementById('filter-product').addEventListener('change', recompute);
+// Multi-select product dropdown: toggle panel + close on outside click
+document.getElementById('ms-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('ms-panel').classList.toggle('open');
+});
+document.getElementById('ms-panel').addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => document.getElementById('ms-panel').classList.remove('open'));
 document.getElementById('filter-start').addEventListener('change', recompute);
 document.getElementById('filter-end').addEventListener('change', recompute);
 document.querySelectorAll('.preset').forEach(el => {
