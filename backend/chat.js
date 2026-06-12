@@ -10,6 +10,7 @@
  */
 
 import { getSchema, queryMetrics, monthlySeries, comparePeriods } from './metrics.js';
+import { runSql, SQL_COLUMNS } from './sql.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6';
@@ -31,8 +32,21 @@ function systemPrompt(today) {
     '- For comparisons ("vs last month", "year over year"), use compare_periods so the delta is exact.',
     '- For trends or when a visual helps, call monthly_series and then call make_chart with those points to render a chart.',
     '- Be concise and concrete. Lead with the number, then brief context. Use € formatting.',
-    '- If a question needs customer-level data (names/emails), explain that the assistant only has access to aggregates.',
     '- If data for a requested period is outside the available range, say so.',
+    '',
+    'TWO WAYS TO GET NUMBERS — pick the right one:',
+    '1. For subscriber counts, churn, MRR, active subscribers, sales/rebills splits → use query_metrics / monthly_series / compare_periods. These encode the price→cadence rules (e.g. €99 Vig Village = 1 month, €594 = annual) needed to define "active" and "churn" correctly. Do NOT compute active/churn from raw SQL — the raw table has no cadence logic.',
+    '2. For anything those tools cannot express — LTV, average revenue per customer, cohort/retention analysis, "customers who bought X then later bought Y", per-customer totals, refund rates, distributions, one-off counts → use run_sql against the `charges` table. The query engine computes exact results; never estimate yourself.',
+    '',
+    'The run_sql `charges` table has one row per Paid/Refunded charge with columns: ' +
+      SQL_COLUMNS.map((c) => c.name).join(', ') + '.',
+    'Column notes: ' + SQL_COLUMNS.map((c) => `${c.name} = ${c.desc}`).join('; ') + '.',
+    'SQL tips:',
+    '- Revenue is net = amount-amount_refunded; filter status=\'Paid\' for revenue; amounts are EUR unless currency=\'usd\'.',
+    '- COUNTING CUSTOMERS: always dedupe to one row per customer BEFORE counting or joining. Use COUNT(DISTINCT customer_email), or a subquery that does GROUP BY customer_email. NEVER count rows of a charges-to-charges join as customers — that multiplies charge pairs and massively overcounts.',
+    '- LTV per customer: SELECT AVG(t) ltv FROM (SELECT customer_email, SUM(net) t FROM charges WHERE status=\'Paid\' AND product=\'Mr. Vigs Atomic Homework\' AND customer_email<>\'\' GROUP BY customer_email).',
+    '- "Bought both X and Y": join two per-customer subqueries (each already GROUP BY customer_email) on customer_email; the result has one row per shared customer. Example: SELECT COUNT(*) n FROM (SELECT customer_email FROM charges WHERE status=\'Paid\' AND product=\'X\' AND customer_email<>\'\' GROUP BY customer_email) a JOIN (SELECT customer_email FROM charges WHERE status=\'Paid\' AND product=\'Y\' AND customer_email<>\'\' GROUP BY customer_email) b ON a.customer_email=b.customer_email.',
+    '- After running a query, sanity-check the magnitude; if a customer count exceeds the total distinct customers, your query is double-counting — fix it before answering.',
   ].join('\n');
 }
 
@@ -101,6 +115,20 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'run_sql',
+      description: 'Run a read-only SELECT query against the `charges` table (one row per Paid/Refunded charge) and get exact rows back. Use for LTV, average revenue per customer, cohort/retention, per-customer rollups, distributions, and anything the metric tools cannot express. Do NOT use for active-subscriber/churn/MRR (use query_metrics for those — they encode cadence rules). Read-only: SELECT/WITH only.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'A single read-only SQL SELECT statement over table `charges`.' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'make_chart',
       description: 'Render a bar chart in the chat. Provide points you obtained from monthly_series or query_metrics. Use after gathering the data.',
       parameters: {
@@ -126,6 +154,7 @@ function runTool(name, args) {
     case 'query_metrics': return queryMetrics(args || {});
     case 'monthly_series': return monthlySeries(args || {});
     case 'compare_periods': return comparePeriods(args || {});
+    case 'run_sql': return runSql((args && args.query) || '');
     case 'make_chart': return { ok: true }; // chart captured separately by caller
     default: return { error: 'unknown tool: ' + name };
   }
