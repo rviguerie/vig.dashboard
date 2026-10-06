@@ -6,6 +6,7 @@
  *   GET  /firebase-config.js   Public Firebase web config (no auth)
  *   GET  /api/charges          Cached charge list (auth required)
  *   POST /api/refresh          Force a Stripe pull now (auth required)
+ *   GET  /api/members          Atomic Homework member join dates + sources (auth required)
  *   GET  /                     → /login (or /dashboard if authed in browser)
  *   /login, /dashboard         Static HTML
  *
@@ -27,6 +28,7 @@ import { warmCache, getCachedCharges, getCacheMeta } from './cache.js';
 import { refreshFromStripe } from './stripe-refresh.js';
 import { refreshPayPal } from './paypal-refresh.js';
 import { chatWithData } from './chat.js';
+import { warmMembers, syncMembers, buildMembers, getMembersMeta, SOURCES } from './members.js';
 import { startCron } from './cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -90,8 +92,20 @@ app.post('/api/refresh', auth, async (_req, res) => {
       out.paypalError = err.message;
     }
   }
+  try {
+    out.members = await syncMembers();
+  } catch (err) {
+    console.error('[/api/refresh] member sync failed:', err);
+    out.membersError = err.message;
+  }
   const added = (out.stripe?.added || 0) + (out.paypal?.added || 0);
   res.json({ ok: true, result: { added, ...out }, meta: getCacheMeta() });
+});
+
+app.get('/api/members', auth, (_req, res) => {
+  const meta = getMembersMeta();
+  if (!getCacheMeta().warmedAt || !meta.warmedAt) return res.json({ warming: true });
+  res.json({ ...buildMembers(), sources: SOURCES, ...meta });
 });
 
 app.post('/api/chat', auth, async (req, res) => {
@@ -151,6 +165,10 @@ function boot() {
         console.log('[boot] cache warm complete; data + cron ready');
       })
       .catch((err) => console.error('[boot] cache warm failed:', err));
+    // Member-source data is independent: a failure here must not block the main dashboard.
+    warmMembers()
+      .then(() => syncMembers())
+      .catch((err) => console.error('[boot] member warm/sync failed:', err));
   } catch (err) {
     console.error('[boot] init failed:', err);
   }
