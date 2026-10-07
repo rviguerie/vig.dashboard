@@ -10,7 +10,7 @@
  * collection (one doc per subscription) and mirrored in memory. The member
  * list is then built on demand:
  *
- *   thrivecart  every subscribing customer → 'thrivecart_upsell'
+ *   thrivecart  every subscribing customer → 'dictionary_ad_upsell'
  *   main        one member per customer (email, else Stripe customer ID).
  *               Join date = earliest of their Atomic Homework subscription
  *               start and their first paid Atomic Homework charge in the
@@ -20,8 +20,12 @@
  *               Source:
  *                 1. the subscription's metadata.source tag, set by the
  *                    tagged checkout links (see make-source-links.js)
- *                 2. otherwise: bought the Atomic Word Dictionary on or
- *                    before joining → 'upsell_email', else 'store_or_daily'
+ *                 2. otherwise, by their last Atomic Word Dictionary purchase
+ *                    on or before joining:
+ *                      within 1 hour → 'dictionary_ad_upsell' (the one-click
+ *                        upsell; the first upsell email goes out after 1 hour)
+ *                      earlier → 'upsell_email'
+ *                      none → 'store_or_daily'
  */
 
 import { getDb } from './firebase.js';
@@ -32,13 +36,14 @@ const STRIPE_BASE = 'https://api.stripe.com/v1';
 const FIRESTORE_BATCH = 500;
 const MAX_PAGES = 1000;
 const TAG_MATCH_WINDOW = 2 * 86400; // a tagged sub counts if it started within 2 days of the join date
+const UPSELL_PAGE_WINDOW = 3600;     // joined ≤1h after buying the dictionary = one-click upsell page
 
 export const SOURCES = {
   store: 'Store',
   upsell_email: 'Upsell emails',
   daily_email: 'Daily emails',
   store_or_daily: 'Store or daily email (untagged)',
-  thrivecart_upsell: 'ThriveCart upsell (dictionary ad)',
+  dictionary_ad_upsell: 'Dictionary ad upsell (one-click)',
 };
 const TAGGABLE = new Set(['store', 'upsell_email', 'daily_email']);
 
@@ -203,12 +208,12 @@ export function buildMembers() {
     if (!id) continue;
     if (!tc.has(id) || s.start < tc.get(id)) tc.set(id, s.start);
   }
-  for (const date of tc.values()) members.push({ date, account: 'thrivecart', source: 'thrivecart_upsell' });
+  for (const date of tc.values()) members.push({ date, account: 'thrivecart', source: 'dictionary_ad_upsell' });
 
   // Main account: ledger charges + subscriptions.
   const join = new Map();       // ident → earliest join (unix s)
   const mainSubs = new Map();   // ident → [subs]
-  const dictFirst = new Map();  // ident → earliest dictionary purchase
+  const dictBuys = new Map();   // ident → [dictionary purchase times]
   for (const c of getCachedCharges()) {
     if (c.status !== 'Paid' && c.status !== 'Refunded') continue;
     const ts = parseInt(c.created, 10);
@@ -216,7 +221,8 @@ export function buildMembers() {
     const id = identOf((c.customer_email || '').toLowerCase(), c.customer_id);
     if (!id) continue;
     if (isDictionary(c.description)) {
-      if (!dictFirst.has(id) || ts < dictFirst.get(id)) dictFirst.set(id, ts);
+      if (!dictBuys.has(id)) dictBuys.set(id, []);
+      dictBuys.get(id).push(ts);
     }
     const net = (parseFloat(c.amount) || 0) - (parseFloat(c.amount_refunded) || 0);
     if (c.channel === 'paypal' || c.status !== 'Paid' || net <= 0 || !isAtomicHomework(c.description)) continue;
@@ -238,7 +244,11 @@ export function buildMembers() {
       .sort((a, b) => a.start - b.start)[0];
     let source;
     if (tagSub) { source = tagSub.source_tag; tagged++; }
-    else source = dictFirst.has(id) && dictFirst.get(id) <= date ? 'upsell_email' : 'store_or_daily';
+    else {
+      const lastDict = Math.max(-Infinity, ...(dictBuys.get(id) || []).filter((t) => t <= date));
+      if (!isFinite(lastDict)) source = 'store_or_daily';
+      else source = date - lastDict <= UPSELL_PAGE_WINDOW ? 'dictionary_ad_upsell' : 'upsell_email';
+    }
     members.push({ date, account: 'main', source });
   }
 
@@ -248,7 +258,7 @@ export function buildMembers() {
     stats: {
       thrivecartSubs: subs.filter((s) => s.account === 'thrivecart').length,
       mainSubs: subs.filter((s) => s.account === 'main').length,
-      dictionaryBuyers: dictFirst.size,
+      dictionaryBuyers: dictBuys.size,
       taggedMembers: tagged,
     },
   };

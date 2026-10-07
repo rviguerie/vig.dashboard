@@ -129,9 +129,9 @@ New Atomic Homework members per source, by week or month. Linked from the top of
 
 | Source | How it's decided |
 |---|---|
-| ThriveCart upsell (dictionary ad) | Every subscriber in the ThriveCart Stripe account |
+| Dictionary ad upsell (one-click) | Every subscriber in the ThriveCart Stripe account, plus untagged main-account members who joined within 1 hour of buying the Atomic Word Dictionary (the first upsell email goes out after 1 hour) |
 | Store / Upsell emails / Daily emails | Main account subscription created through a tagged checkout link (`metadata.source` on the subscription) |
-| Upsell emails (past) | Untagged main-account member who bought the Atomic Word Dictionary on or before joining |
+| Upsell emails (past) | Untagged main-account member who bought the Atomic Word Dictionary more than 1 hour before joining |
 | Store or daily email (untagged) | Every other main-account member |
 
 Main-account members come from Atomic Homework subscriptions plus the first paid Atomic Homework charge in the `charges` ledger (so Kartra-era members are included). PayPal is left out. Each person counts once per account, on the date they first joined. Subscriptions sync hourly into the `atomic_subs` Firestore collection.

@@ -6,7 +6,7 @@
 <title>Mr. Vig LLC — Where members come from</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--s-store:#3987e5;--s-upsell_email:#d95926;--s-daily_email:#199e70;--s-store_or_daily:#c98500;--s-thrivecart_upsell:#d55181}
+:root{--s-store:#3987e5;--s-upsell_email:#d95926;--s-daily_email:#199e70;--s-store_or_daily:#c98500;--s-dictionary_ad_upsell:#d55181}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e8e9ec;min-height:100vh;padding:2rem;max-width:1400px;margin:0 auto}
 @media(max-width:700px){body{padding:1rem}}
 h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
@@ -144,7 +144,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/fireba
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
 // Fixed order = fixed color. Never reorder by rank.
-const ORDER = ['store', 'upsell_email', 'daily_email', 'store_or_daily', 'thrivecart_upsell'];
+const ORDER = ['store', 'upsell_email', 'daily_email', 'store_or_daily', 'dictionary_ad_upsell'];
 const color = (s) => `var(--s-${s})`;
 const DAY = 86400000;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -239,7 +239,7 @@ function showWarnings(data) {
   document.getElementById('method-note').innerHTML =
     'How sources are worked out: ThriveCart account members are all counted as the dictionary-ad upsell. ' +
     'In the main account, a member who joined through one of the tagged checkout links gets that link\'s source. ' +
-    'Everyone else is "Upsell emails" if they bought the Atomic Word Dictionary on or before joining, otherwise "Store or daily email". ' +
+    'Everyone else who bought the Atomic Word Dictionary before joining counts as the dictionary-ad upsell if they joined within 1 hour of buying it, and as "Upsell emails" if later. The rest are "Store or daily email". ' +
     'Each person counts once per account, on the date they first joined. PayPal members are not included. ' +
     `<br>Found: ${fmt(s.dictionaryBuyers || 0)} dictionary buyers · ${fmt(s.taggedMembers || 0)} members from tagged links · ` +
     `${fmt(s.mainSubs || 0)} main-account subscriptions · ${fmt(s.thrivecartSubs || 0)} ThriveCart subscriptions.`;
