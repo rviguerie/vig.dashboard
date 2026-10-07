@@ -36,7 +36,7 @@ export const SQL_COLUMNS = [
   { name: 'customer_email', desc: 'customer email (the join key for per-customer work)' },
   { name: 'customer_id', desc: 'Stripe/PayPal customer id' },
   { name: 'invoice_id', desc: 'Stripe invoice id, if any' },
-  { name: 'channel', desc: "'kartra_orchestrated' | 'native_stripe_sub' | 'paypal'" },
+  { name: 'channel', desc: "'kartra_orchestrated' | 'native_stripe_sub' | 'paypal' | 'thrivecart'" },
   { name: 'source', desc: "'csv' | 'stripe_api' | 'paypal_api'" },
 ];
 

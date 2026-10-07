@@ -225,7 +225,8 @@ export function buildMembers() {
       dictBuys.get(id).push(ts);
     }
     const net = (parseFloat(c.amount) || 0) - (parseFloat(c.amount_refunded) || 0);
-    if (c.channel === 'paypal' || c.status !== 'Paid' || net <= 0 || !isAtomicHomework(c.description)) continue;
+    // ThriveCart charges are counted from that account's subscriptions above.
+    if (c.channel === 'paypal' || c.channel === 'thrivecart' || c.status !== 'Paid' || net <= 0 || !isAtomicHomework(c.description)) continue;
     if (!join.has(id) || ts < join.get(id)) join.set(id, ts);
   }
   for (const s of subs) {
