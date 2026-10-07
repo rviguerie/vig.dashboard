@@ -337,10 +337,12 @@ function toast(msg, isErr) {
   setTimeout(() => { el.className = 'toast'; }, 4000);
 }
 
-function normalizeProduct(desc) {
+function normalizeProduct(desc, amount) {
   desc = (desc || '').trim();
   if (!desc) return null;
   if (desc.startsWith('Invoice ') || desc === 'Subscription creation') return '__native_sub_unattributed__';
+  // "AWD Upsell" at €39 is Atomic Homework sold as the dictionary one-click upsell (keep in sync with backend/metrics.js).
+  if (/awd upsell/i.test(desc) && Math.abs((amount || 0) - 39) < 0.01) return 'Mr. Vigs Atomic Homework';
   return desc;
 }
 
@@ -409,7 +411,7 @@ function chargesFromBackend(rows) {
     const refunded = parseFloat(r.amount_refunded || 0);
     const net = amount - refunded;
     const currency = (r.currency || '').toLowerCase();
-    const product = normalizeProduct(r.description);
+    const product = normalizeProduct(r.description, amount);
     if (product && product !== '__native_sub_unattributed__') products.add(product);
     out.push({
       date: dt,

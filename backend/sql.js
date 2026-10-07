@@ -88,7 +88,8 @@ function ensureTable() {
       net: amount - refunded,
       currency: (c.currency || '').toLowerCase(),
       status: c.status || '',
-      product: c.description || '',
+      // "AWD Upsell" at €39 is Atomic Homework (same rule as metrics.js).
+      product: /awd upsell/i.test(c.description || '') && Math.abs(amount - 39) < 0.01 ? 'Mr. Vigs Atomic Homework' : (c.description || ''),
       customer_email: email,
       customer_id: c.customer_id || '',
       invoice_id: c.invoice_id || '',
