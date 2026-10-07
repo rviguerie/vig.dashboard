@@ -409,11 +409,13 @@ function renderLinks(data) {
       `<div class="link-row"><span class="src">${esc(LINK_LABELS[l.source] || l.source)}</span>` +
       `<span class="url">${esc(l.url)}</span>` +
       `<span class="dim">${esc(l.price)} · for the ${esc(LINK_WHERE[l.source] || l.source)}</span>` +
-      `<button class="btn" data-copy="${esc(l.url)}">Copy</button></div>`).join('');
+      `<button class="btn" data-copy="${esc(l.url)}">Copy</button>` +
+      (data.writeKey ? `<button class="btn" data-off="${esc(l.id)}" title="Switch this link off in Stripe">Switch off</button>` : '') +
+      '</div>').join('');
   }
   if (!data.writeKey) {
     html += (data.saved?.length ? '<div style="margin-top:.9rem">' : '<div>') +
-      (data.saved?.length ? 'To make more links, ' : 'No tagged links yet. To create them, ') +
+      (data.saved?.length ? 'To make or switch off links, ' : 'No tagged links yet. To create them, ') +
       'add a temporary key in Railway: <ol>' +
       '<li>In your main Stripe account, create a restricted key with <b>Payment Links: Write</b>, <b>Prices: Read</b> and <b>Products: Read</b>.</li>' +
       '<li>In Railway → Variables, add it as <code>STRIPE_WRITE_KEY</code> and deploy.</li>' +
@@ -422,25 +424,52 @@ function renderLinks(data) {
   } else if (data.templatesError) {
     html += `<div style="color:#f87171;margin-top:.6rem">Could not read your checkout links: ${esc(data.templatesError)}</div>`;
   } else if (!data.templates?.length) {
-    html += '<div style="margin-top:.6rem">No active Atomic Homework checkout link found in your main Stripe account to copy.</div>';
+    html += '<div style="margin-top:.6rem">No active checkout link found in your main Stripe account to copy.</div>';
   } else {
-    html += '<div style="margin-top:.9rem">Pick the checkout link you use today. It will be copied three times (store, upsell emails, daily emails) with the same price, thank-you page and settings.</div>' +
-      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:.6rem"><select id="tpl">' +
-      data.templates.map((t) => `<option value="${esc(t.id)}">${esc(t.price)} · ${esc(t.url)} → ${esc(t.thankYou)}</option>`).join('') +
-      '</select><button class="btn primary" id="make-links">Create tagged links</button></div>' +
+    html += '<div style="margin-top:.9rem">Pick a checkout link you use today and where the copy is for. Each copy keeps the same price, thank-you page and settings. ' +
+      'Tip: match the code after <code>buy.stripe.com/</code> with the link on your page.</div>' +
+      '<div style="display:flex;flex-direction:column;gap:10px;margin-top:.6rem"><select id="tpl">' +
+      data.templates.map((t) => `<option value="${esc(t.id)}" data-trial="${t.trialDays || 0}">${esc(t.price)}${t.trialDays ? ` · ${t.trialDays}-day free trial` : ''} · ${esc(t.product)} · ${esc(t.url)} → ${esc(t.thankYou)}</option>`).join('') +
+      '</select><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">' +
+      Object.entries(LINK_LABELS).map(([k, v]) => `<label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" class="src-cb" value="${k}"> ${esc(v)}</label>`).join('') +
+      '<label id="notrial-wrap" style="display:none;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="notrial"> Without the free trial</label>' +
+      '<button class="btn primary" id="make-links">Create tagged links</button></div></div>' +
       (data.saved?.length ? '<div class="dim" style="margin-top:.6rem">When you are done, remove <code>STRIPE_WRITE_KEY</code> from Railway and delete that key in Stripe. The links above keep working.</div>' : '');
   }
   card.innerHTML = html;
   card.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(b.dataset.copy); toast('Link copied.'); } catch { toast('Copy failed — select the link and copy it by hand.', true); }
   }));
+  card.querySelectorAll('[data-off]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Switch this link off? Anyone who opens it afterwards will see that it is no longer available.')) return;
+    b.disabled = true;
+    try {
+      const res = await authFetch('/api/source-links/deactivate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: b.dataset.off }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || 'HTTP ' + res.status);
+      toast('Link switched off.');
+      await loadLinks();
+    } catch (err) { toast(err.message, true); b.disabled = false; }
+  }));
+  const tpl = document.getElementById('tpl');
+  const syncTrial = () => {
+    const opt = tpl.selectedOptions[0];
+    const has = opt && +opt.dataset.trial > 0;
+    document.getElementById('notrial-wrap').style.display = has ? 'inline-flex' : 'none';
+    if (!has) document.getElementById('notrial').checked = false;
+  };
+  if (tpl) { tpl.addEventListener('change', syncTrial); syncTrial(); }
   const btn = document.getElementById('make-links');
   if (btn) btn.addEventListener('click', async () => {
+    const sources = [...card.querySelectorAll('.src-cb:checked')].map((c) => c.value);
+    if (!sources.length) { toast('Tick where the link is for (store, upsell emails or daily emails).', true); return; }
     btn.disabled = true; btn.textContent = 'Creating…';
     try {
       const res = await authFetch('/api/source-links', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: document.getElementById('tpl').value }),
+        body: JSON.stringify({ templateId: tpl.value, sources, noTrial: document.getElementById('notrial').checked }),
       });
       const out = await res.json();
       if (!res.ok) throw new Error(out.error || 'HTTP ' + res.status);
