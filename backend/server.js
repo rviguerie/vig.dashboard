@@ -7,6 +7,8 @@
  *   GET  /api/charges          Cached charge list (auth required)
  *   POST /api/refresh          Force a Stripe pull now (auth required)
  *   GET  /api/members          Atomic Homework member join dates + sources (auth required)
+ *   GET  /api/source-links     Saved tagged checkout links (+ copyable links if write key set)
+ *   POST /api/source-links     Create tagged copies of a checkout link (needs STRIPE_WRITE_KEY)
  *   GET  /                     → /login (or /dashboard if authed in browser)
  *   /login, /dashboard         Static HTML
  *
@@ -29,6 +31,7 @@ import { refreshFromStripe } from './stripe-refresh.js';
 import { refreshPayPal } from './paypal-refresh.js';
 import { chatWithData } from './chat.js';
 import { warmMembers, syncMembers, buildMembers, getMembersMeta, SOURCES } from './members.js';
+import { hasWriteKey, listTemplates, createTaggedLinks, savedLinks } from './source-links.js';
 import { startCron } from './cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -106,6 +109,31 @@ app.get('/api/members', auth, (_req, res) => {
   const meta = getMembersMeta();
   if (!getCacheMeta().warmedAt || !meta.warmedAt) return res.json({ warming: true });
   res.json({ ...buildMembers(), sources: SOURCES, ...meta });
+});
+
+app.get('/api/source-links', auth, async (_req, res) => {
+  try {
+    const out = { writeKey: hasWriteKey(), saved: await savedLinks() };
+    if (out.writeKey) {
+      try { out.templates = await listTemplates(); } catch (err) { out.templatesError = err.message; }
+    }
+    res.json(out);
+  } catch (err) {
+    console.error('[/api/source-links] failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/source-links', auth, async (req, res) => {
+  if (!hasWriteKey()) return res.status(400).json({ error: 'STRIPE_WRITE_KEY is not set in Railway.' });
+  const templateId = String(req.body?.templateId || '');
+  if (!/^plink_\w+$/.test(templateId)) return res.status(400).json({ error: 'Pick a checkout link to copy.' });
+  try {
+    res.json({ ok: true, links: await createTaggedLinks(templateId) });
+  } catch (err) {
+    console.error('[/api/source-links] create failed:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/chat', auth, async (req, res) => {

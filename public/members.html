@@ -74,6 +74,15 @@ tr.totals td{font-weight:600;border-top:1px solid #2d3148}
 .note{font-size:12px;color:#6b7280;margin-top:.6rem;line-height:1.6}
 .warn-box{background:#2a1f12;border:1px solid #7c4a12;color:#fbbf24;border-radius:8px;padding:.6rem .9rem;font-size:12px;margin-bottom:1rem;display:none}
 .empty{font-size:13px;color:#4b5563;text-align:center;padding:3rem 0}
+.links-card{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:1rem 1.25rem;font-size:13px;color:#9ca3af;line-height:1.6}
+.links-card ol{padding-left:1.2rem;margin:.4rem 0}
+.links-card code{background:#0f1117;border:1px solid #2d3148;border-radius:4px;padding:1px 5px;font-size:12px;color:#e8e9ec}
+.links-card select{font-size:13px;padding:6px 10px;border:1px solid #2d3148;border-radius:6px;background:#1a1d2e;color:#e8e9ec;font-family:inherit;max-width:100%}
+.link-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:.55rem 0;border-bottom:1px solid #1a1d2e}
+.link-row:last-child{border-bottom:none}
+.link-row .src{min-width:120px;color:#e8e9ec;font-weight:500}
+.link-row .url{flex:1;min-width:0;overflow-wrap:anywhere;color:#8b95c9;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.link-row .dim{color:#6b7280;font-size:12px}
 </style>
 </head>
 <body>
@@ -138,6 +147,11 @@ tr.totals td{font-weight:600;border-top:1px solid #2d3148}
 
 <div id="empty" class="empty" style="display:none">No members found yet.</div>
 
+<div class="section" id="links-section" style="display:none">
+  <div class="section-title">Tagged checkout links</div>
+  <div class="links-card" id="links-card">Loading…</div>
+</div>
+
 <script src="/firebase-config.js"></script>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
@@ -145,7 +159,7 @@ import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/fi
 
 // Fixed order = fixed color. Never reorder by rank.
 const ORDER = ['store', 'upsell_email', 'daily_email', 'store_or_daily', 'dictionary_ad_upsell'];
-const color = (s) => `var(--s-${s})`;
+const color = (s) => `var(--s-${s}, #8b8f9c)`;
 const DAY = 86400000;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -175,6 +189,7 @@ if (!cfg || !cfg.apiKey) {
     if (!user) { location.href = '/login'; return; }
     document.getElementById('user-pill').textContent = user.email;
     load();
+    loadLinks();
   });
 }
 document.getElementById('signout-btn').addEventListener('click', () => {
@@ -295,7 +310,8 @@ function render() {
 
   // Only show sources that have ever had a member, in fixed order.
   const present = new Set(members.map((m) => m.source));
-  const sources = ORDER.filter((s) => present.has(s));
+  // Unknown sources (e.g. a newer server than this page) go last, never hidden.
+  const sources = [...ORDER.filter((s) => present.has(s)), ...[...present].filter((s) => !ORDER.includes(s)).sort()];
 
   // Buckets
   const buckets = new Map();
@@ -366,6 +382,76 @@ document.getElementById('f-end').addEventListener('change', render);
 document.querySelectorAll('.preset').forEach((el) => el.addEventListener('click', () => {
   setRange(el.dataset.days === 'all' ? 'all' : parseInt(el.dataset.days, 10));
 }));
+
+// ─── Tagged checkout links ───────────────────────────────────────────
+const LINK_LABELS = { store: 'Store', upsell_email: 'Upsell emails', daily_email: 'Daily emails' };
+const LINK_WHERE = { store: 'store page', upsell_email: 'upsell emails', daily_email: 'daily emails' };
+
+async function loadLinks() {
+  const card = document.getElementById('links-card');
+  document.getElementById('links-section').style.display = 'block';
+  try {
+    const res = await authFetch('/api/source-links');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+    renderLinks(data);
+  } catch (err) {
+    card.innerHTML = '<span style="color:#f87171">Could not load links: ' + esc(err.message) + '</span>';
+  }
+}
+
+function renderLinks(data) {
+  const card = document.getElementById('links-card');
+  let html = '';
+  if (data.saved?.length) {
+    html += '<div style="margin-bottom:.6rem">Use each link only in its own place, so every sale records where it came from.</div>';
+    html += data.saved.map((l) =>
+      `<div class="link-row"><span class="src">${esc(LINK_LABELS[l.source] || l.source)}</span>` +
+      `<span class="url">${esc(l.url)}</span>` +
+      `<span class="dim">${esc(l.price)} · for the ${esc(LINK_WHERE[l.source] || l.source)}</span>` +
+      `<button class="btn" data-copy="${esc(l.url)}">Copy</button></div>`).join('');
+  }
+  if (!data.writeKey) {
+    html += (data.saved?.length ? '<div style="margin-top:.9rem">' : '<div>') +
+      (data.saved?.length ? 'To make more links, ' : 'No tagged links yet. To create them, ') +
+      'add a temporary key in Railway: <ol>' +
+      '<li>In your main Stripe account, create a restricted key with <b>Payment Links: Write</b>, <b>Prices: Read</b> and <b>Products: Read</b>.</li>' +
+      '<li>In Railway → Variables, add it as <code>STRIPE_WRITE_KEY</code> and deploy.</li>' +
+      '<li>Reload this page and use the button that appears here.</li></ol>' +
+      '</div>';
+  } else if (data.templatesError) {
+    html += `<div style="color:#f87171;margin-top:.6rem">Could not read your checkout links: ${esc(data.templatesError)}</div>`;
+  } else if (!data.templates?.length) {
+    html += '<div style="margin-top:.6rem">No active Atomic Homework checkout link found in your main Stripe account to copy.</div>';
+  } else {
+    html += '<div style="margin-top:.9rem">Pick the checkout link you use today. It will be copied three times (store, upsell emails, daily emails) with the same price, thank-you page and settings.</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:.6rem"><select id="tpl">' +
+      data.templates.map((t) => `<option value="${esc(t.id)}">${esc(t.price)} · ${esc(t.url)} → ${esc(t.thankYou)}</option>`).join('') +
+      '</select><button class="btn primary" id="make-links">Create tagged links</button></div>' +
+      (data.saved?.length ? '<div class="dim" style="margin-top:.6rem">When you are done, remove <code>STRIPE_WRITE_KEY</code> from Railway and delete that key in Stripe. The links above keep working.</div>' : '');
+  }
+  card.innerHTML = html;
+  card.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); toast('Link copied.'); } catch { toast('Copy failed — select the link and copy it by hand.', true); }
+  }));
+  const btn = document.getElementById('make-links');
+  if (btn) btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Creating…';
+    try {
+      const res = await authFetch('/api/source-links', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templateId: document.getElementById('tpl').value }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || 'HTTP ' + res.status);
+      toast('Tagged links ready.');
+      await loadLinks();
+    } catch (err) {
+      toast(err.message, true);
+      btn.disabled = false; btn.textContent = 'Create tagged links';
+    }
+  });
+}
 </script>
 </body>
 </html>

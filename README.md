@@ -138,14 +138,14 @@ Main-account members come from Atomic Homework subscriptions plus the first paid
 
 ### Tagged checkout links (one time)
 
-Create a restricted key in the main Stripe account with **Payment Links: Write, Products: Read, Prices: Read**. Use it only for this command — don't store it in Railway:
+The members page has a **Tagged checkout links** section. It copies your existing Atomic Homework Stripe Payment Link three times (same price, thank-you page and checkout settings), tagging each copy `store`, `upsell_email` or `daily_email`. The tag is stamped on every subscription the link creates.
 
-```bash
-STRIPE_WRITE_KEY=rk_live_... npm run make-links                    # every active Atomic Homework price
-STRIPE_WRITE_KEY=rk_live_... npm run make-links -- price_abc price_def   # or just these prices
-```
+1. In the main Stripe account, create a restricted key with **Payment Links: Write, Products: Read, Prices: Read**.
+2. Add it in Railway as `STRIPE_WRITE_KEY` and deploy.
+3. On the members page, pick the link to copy and click **Create tagged links**. Re-running reuses existing copies.
+4. Remove `STRIPE_WRITE_KEY` from Railway and delete the key in Stripe. The links are saved in Firestore (`source_links`) and keep showing on the page.
 
-It prints one link per source per price. Put the `store` link on the store page, `upsell_email` in the upsell emails and `daily_email` in the daily emails. Re-running reuses existing links. Delete the write key in Stripe afterwards.
+Put the store link on the store page, the upsell-emails link in the upsell emails and the daily-emails link in the daily emails.
 
 ## Troubleshooting
 
@@ -172,7 +172,7 @@ app/
 │   ├── stripe-refresh.js  # Incremental Stripe API pull → Firestore
 │   ├── cron.js            # node-cron hourly schedule
 │   ├── members.js         # Member sources: subscription sync (2 accounts) + source rules
-│   ├── make-source-links.js # One-shot: create tagged checkout links
+│   ├── source-links.js    # Tagged checkout links (copies a Payment Link per source)
 │   └── seed.js            # One-shot CSV → Firestore bulk load
 ├── public/
 │   ├── login.html         # Google sign-in
