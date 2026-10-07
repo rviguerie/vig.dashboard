@@ -38,6 +38,12 @@ const FIRESTORE_BATCH = 500;
 const MAX_PAGES = 1000;
 const TAG_MATCH_WINDOW = 2 * 86400; // a tagged sub counts if it started within 2 days of the join date
 const UPSELL_PAGE_WINDOW = 3600;     // joined ≤1h after buying the dictionary = one-click upsell page
+// PayPal can't carry a link tag, so new PayPal members are sorted by price:
+// €49 is only sold on the store; €39 without a prior dictionary purchase is
+// the daily emails. Applies to PayPal members who joined from this date on.
+const PAYPAL_PRICE_RULE_FROM = Date.UTC(2026, 9, 7) / 1000; // 7 Oct 2026
+const STORE_PRICE = 49;
+const EMAIL_PRICE = 39;
 
 export const SOURCES = {
   store: 'Store',
@@ -215,6 +221,7 @@ export function buildMembers() {
   // Main account: ledger charges + subscriptions.
   const join = new Map();       // ident → earliest join (unix s)
   const joinVia = new Map();    // ident → 'paypal' | 'stripe' (how that first payment was made)
+  const joinAmount = new Map(); // ident → amount of that first payment
   const mainSubs = new Map();   // ident → [subs]
   const dictBuys = new Map();   // ident → [dictionary purchase times]
   for (const c of getCachedCharges()) {
@@ -233,6 +240,7 @@ export function buildMembers() {
     if (!join.has(id) || ts < join.get(id)) {
       join.set(id, ts);
       joinVia.set(id, c.channel === 'paypal' ? 'paypal' : 'stripe');
+      joinAmount.set(id, parseFloat(c.amount) || 0);
     }
   }
   for (const s of subs) {
@@ -244,6 +252,7 @@ export function buildMembers() {
     if (!join.has(id) || s.start < join.get(id)) {
       join.set(id, s.start);
       joinVia.set(id, 'stripe');
+      joinAmount.delete(id);
     }
   }
 
@@ -253,14 +262,17 @@ export function buildMembers() {
     const tagSub = (mainSubs.get(id) || [])
       .filter((s) => TAGGABLE.has(s.source_tag) && Math.abs(s.start - date) <= TAG_MATCH_WINDOW)
       .sort((a, b) => a.start - b.start)[0];
+    const via = joinVia.get(id) || 'stripe';
+    const amount = joinAmount.get(id);
+    const byPrice = via === 'paypal' && date >= PAYPAL_PRICE_RULE_FROM;
     let source;
     if (tagSub) { source = tagSub.source_tag; tagged++; }
+    else if (byPrice && Math.abs(amount - STORE_PRICE) < 0.01) source = 'store';
     else {
       const lastDict = Math.max(-Infinity, ...(dictBuys.get(id) || []).filter((t) => t <= date));
-      if (!isFinite(lastDict)) source = 'store_or_daily';
-      else source = date - lastDict <= UPSELL_PAGE_WINDOW ? 'dictionary_ad_upsell' : 'upsell_email';
+      if (isFinite(lastDict)) source = date - lastDict <= UPSELL_PAGE_WINDOW ? 'dictionary_ad_upsell' : 'upsell_email';
+      else source = byPrice && Math.abs(amount - EMAIL_PRICE) < 0.01 ? 'daily_email' : 'store_or_daily';
     }
-    const via = joinVia.get(id) || 'stripe';
     if (via === 'paypal') paypal++;
     members.push({ date, account: 'main', source, via });
   }
