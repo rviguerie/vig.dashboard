@@ -134,7 +134,7 @@ New Atomic Homework members per source, by week or month. Linked from the top of
 | Upsell emails (past) | Untagged main-account member who bought the Atomic Word Dictionary more than 1 hour before joining |
 | Store or daily email (untagged) | Every other main-account member |
 
-Main-account members come from Atomic Homework subscriptions plus the first paid Atomic Homework charge in the `charges` ledger (so Kartra-era members are included). PayPal is left out. Each person counts once per account, on the date they first joined. Subscriptions sync hourly into the `atomic_subs` Firestore collection.
+Main-account members come from Atomic Homework subscriptions plus the first paid Atomic Homework charge in the `charges` ledger (so Kartra-era members are included) and PayPal payments, sorted by the same rules since PayPal can't carry a link tag. Each person counts once per account, on the date they first joined. Subscriptions sync hourly into the `atomic_subs` Firestore collection.
 
 ### Tagged checkout links (one time)
 

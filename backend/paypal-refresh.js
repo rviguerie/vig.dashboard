@@ -97,6 +97,8 @@ function mapPayPalTxn(t) {
   const email = (pi.email_address || '').toLowerCase();
   const customerId = pi.account_id || ti.paypal_account_id || '';
   const product = normalizeProductName(ti.transaction_subject);
+  // Keep PayPal's own names: they may say which page or offer the sale came from.
+  const itemNames = (t.cart_info?.item_details || []).map((i) => i.item_name).filter(Boolean).join(' | ');
 
   const base = {
     id: txId,
@@ -106,6 +108,9 @@ function mapPayPalTxn(t) {
     customer_id: customerId,
     customer_email: email,
     invoice_id: '', // PayPal has no Stripe-style invoice; channel set explicitly
+    raw_description: ti.transaction_subject || '',
+    item_names: itemNames,
+    custom_field: ti.custom_field || '',
     channel: 'paypal',
     source: 'paypal_api',
   };
