@@ -82,11 +82,12 @@ export function getSchema() {
   }
   return {
     tracked_products: TRACKED,
-    channels: ['kartra_orchestrated', 'native_stripe_sub', 'paypal'],
+    channels: ['kartra_orchestrated', 'native_stripe_sub', 'paypal', 'thrivecart'],
     channel_meaning: {
       kartra_orchestrated: 'Legacy subs where Kartra triggers a Stripe charge',
       native_stripe_sub: 'New direct-link customers paying via native Stripe subscriptions',
       paypal: 'All PayPal payments (mostly Kartra-orchestrated, small direct-button share)',
+      thrivecart: 'ThriveCart Stripe account: the Atomic Homework one-click upsell after the Atomic Word Dictionary ad',
     },
     primary_currency: 'EUR',
     data_min_date: isFinite(min) ? ymd(new Date(min)) : null,

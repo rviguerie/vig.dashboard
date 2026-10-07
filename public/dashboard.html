@@ -139,7 +139,7 @@ footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
 </head>
 <body>
 <h1>Mr. Vig LLC</h1>
-<p class="subtitle">Stripe ledger · Kartra-orchestrated legacy + native Stripe direct · synced hourly from Stripe</p>
+<p class="subtitle">Stripe ledger · Kartra-orchestrated legacy + native Stripe direct + ThriveCart · synced hourly from Stripe</p>
 
 <div class="toast" id="toast"></div>
 
@@ -233,7 +233,7 @@ footer{margin-top:3rem;font-size:11px;color:#374151;text-align:center}
   <div class="section">
     <div class="section-title">Channel split · in window</div>
     <div class="channel-pills" id="channel-pills"></div>
-    <div class="note">Kartra-orchestrated = legacy subs (Kartra triggers Stripe charge). Native Stripe sub = new direct-link customers.</div>
+    <div class="note">Kartra-orchestrated = legacy subs (Kartra triggers Stripe charge). Native Stripe sub = new direct-link customers. ThriveCart = Atomic Homework one-click upsell after the dictionary ad.</div>
   </div>
 
   <div class="section">
@@ -539,6 +539,7 @@ function compute(filters) {
     kartra_orchestrated: { eur: 0, usd: 0 },
     native_stripe_sub: { eur: 0, usd: 0 },
     paypal: { eur: 0, usd: 0 },
+    thrivecart: { eur: 0, usd: 0 },
   };
   const refunds = { eur: 0, usd: 0 };
   const salesMonthly = {};
@@ -792,6 +793,7 @@ function render(m) {
     { key: 'kartra_orchestrated', label: 'Kartra-orchestrated (Stripe, legacy)' },
     { key: 'native_stripe_sub', label: 'Native Stripe subs (new)' },
     { key: 'paypal', label: 'PayPal' },
+    { key: 'thrivecart', label: 'ThriveCart (Stripe)' },
   ];
   const totalAll = m.totals.eur + m.totals.usd / rate;
   for (const ch of channels) {
