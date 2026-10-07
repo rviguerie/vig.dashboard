@@ -66,7 +66,7 @@ let lastSyncAt = null;
 let lastSyncResult = null;
 const scannedUntil = {};   // account → newest `created` seen this process (incl. non-Atomic subs)
 
-const isAtomicHomework = (name) => /atomic homework/i.test(name || '');
+const isAtomicHomework = (name) => /atomic\s*homework/i.test(name || '');
 const isDictionary = (desc) => /atomic word dictionary|word dictionary/i.test(desc || '');
 
 // ─── Stripe helpers ──────────────────────────────────────────────────
@@ -96,21 +96,44 @@ async function listAll(key, path, params) {
   return out;
 }
 
-async function productNames(key) {
+const subProductIds = (s) => (s.items?.data || []).map((it) => {
+  const p = it.price?.product ?? it.plan?.product;
+  return typeof p === 'object' && p ? p.id : p || '';
+}).filter(Boolean);
+
+/**
+ * Product id → name for every product these subscriptions use. Lists all
+ * products, then looks up any id the list didn't include one by one.
+ */
+async function productNames(key, raw) {
   const products = await listAll(key, '/products', []);
-  return new Map(products.map((p) => [p.id, p.name || '']));
+  const names = new Map(products.map((p) => [p.id, p.name || '']));
+  const missing = [...new Set(raw.flatMap(subProductIds))].filter((id) => !names.has(id));
+  for (const id of missing) {
+    try {
+      const p = await stripeGet(key, `/products/${id}`);
+      names.set(id, p.name || '');
+    } catch (err) {
+      console.error(`[members] product ${id} lookup failed:`, err.message);
+    }
+  }
+  return names;
+}
+
+function subNames(s, names) {
+  const items = s.items?.data || [];
+  return [
+    ...subProductIds(s).map((id) => names?.get(id) || ''),
+    ...items.map((it) => it.price?.nickname || it.plan?.nickname || ''),
+  ].filter(Boolean);
 }
 
 function mapSubscription(account, s, names) {
-  const items = s.items?.data || [];
-  const productIds = items.map((it) => {
-    const p = it.price?.product ?? it.plan?.product;
-    return typeof p === 'object' && p ? p.id : p || '';
-  });
+  const productIds = subProductIds(s);
   const productName = names ? productIds.map((id) => names.get(id) || '').find(Boolean) || '' : '';
   const tag = (s.metadata?.source || '').trim().toLowerCase();
   // Tagged checkout links are only made for Atomic Homework, so a tag counts even if the product is named differently.
-  if (ACCOUNTS[account].atomicOnly && !TAGGABLE.has(tag) && !productIds.some((id) => isAtomicHomework(names?.get(id)))) return null;
+  if (ACCOUNTS[account].atomicOnly && !TAGGABLE.has(tag) && !subNames(s, names).some(isAtomicHomework)) return null;
 
   let customerId = '';
   let email = '';
@@ -181,11 +204,23 @@ export async function syncMembers() {
       const params = [['status', 'all'], ['expand[]', 'data.customer']];
       if (sinceTs) params.push(['created[gt]', String(sinceTs)]);
       const raw = await listAll(key, '/subscriptions', params);
-      const names = raw.length ? await productNames(key).catch(() => null) : null;
-      if (raw.length && cfg.atomicOnly && !names) throw new Error('could not read products (key needs Products: Read)');
+      let names = null;
+      if (raw.length) {
+        try { names = await productNames(key, raw); } catch (err) {
+          if (cfg.atomicOnly) throw new Error('could not read products (key needs Products: Read): ' + err.message);
+        }
+      }
       const rows = raw.map((s) => mapSubscription(account, s, names)).filter(Boolean);
-      result[account] = { scanned: raw.length, added: await persist(rows) };
-      for (const s of raw) scannedUntil[account] = Math.max(scannedUntil[account] || 0, s.created || 0);
+      const skipped = raw.length - rows.length;
+      result[account] = { scanned: raw.length, added: await persist(rows), skipped };
+      if (skipped) {
+        // Show what was skipped so a naming mismatch is visible in the logs.
+        const seen = {};
+        for (const s of raw) for (const n of (subNames(s, names).length ? subNames(s, names) : ['(no product name)'])) seen[n] = (seen[n] || 0) + 1;
+        result[account].namesSeen = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, c]) => `${n} ×${c}`);
+      }
+      // Only move the cursor past subscriptions we kept: if none matched, the next sync retries them.
+      if (rows.length) for (const s of raw) scannedUntil[account] = Math.max(scannedUntil[account] || 0, s.created || 0);
     } catch (err) {
       console.error(`[members] ${account} sync failed:`, err.message);
       result[account] = { error: err.message };
