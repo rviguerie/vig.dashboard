@@ -145,7 +145,7 @@ import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/fi
 
 // Fixed order = fixed color. Never reorder by rank.
 const ORDER = ['store', 'upsell_email', 'daily_email', 'store_or_daily', 'dictionary_ad_upsell'];
-const color = (s) => `var(--s-${s})`;
+const color = (s) => `var(--s-${s}, #8b8f9c)`;
 const DAY = 86400000;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -295,7 +295,8 @@ function render() {
 
   // Only show sources that have ever had a member, in fixed order.
   const present = new Set(members.map((m) => m.source));
-  const sources = ORDER.filter((s) => present.has(s));
+  // Unknown sources (e.g. a newer server than this page) go last, never hidden.
+  const sources = [...ORDER.filter((s) => present.has(s)), ...[...present].filter((s) => !ORDER.includes(s)).sort()];
 
   // Buckets
   const buckets = new Map();
