@@ -247,6 +247,10 @@ function showWarnings(data) {
   if (data.configured?.thrivecart && data.lastSyncAt && !data.stats.thrivecartSubs) {
     w.push('The ThriveCart account returned no subscriptions. If ThriveCart bills with one-off charges instead of Stripe subscriptions, this page will need to count charges there instead.');
   }
+  const mainSync = data.lastSyncResult?.main;
+  if (mainSync?.scanned && !mainSync.added && !data.stats.mainSubs) {
+    w.push(`The main account returned ${mainSync.scanned} subscriptions but none were recognised as Atomic Homework. Product names seen: ${(mainSync.namesSeen || []).join(', ') || 'none'}.`);
+  }
   const box = document.getElementById('warn-box');
   box.innerHTML = w.map(esc).join('<br>');
   box.style.display = w.length ? 'block' : 'none';
