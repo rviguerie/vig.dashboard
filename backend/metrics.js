@@ -23,12 +23,14 @@ const TRACKED = Object.keys(PRICE_RULES);
 
 const DAY = 86400000;
 
-function normalizeProduct(desc) {
+function normalizeProduct(desc, amount) {
   desc = (desc || '').trim();
   if (!desc) return null;
   if (desc.startsWith('Invoice ') || desc === 'Subscription creation' || desc.startsWith('Payment for invoice ')) {
     return '__native_sub_unattributed__';
   }
+  // "AWD Upsell" at €39 is Atomic Homework sold as the dictionary one-click upsell.
+  if (/awd upsell/i.test(desc) && Math.abs((amount || 0) - 39) < 0.01) return 'Mr. Vigs Atomic Homework';
   return desc;
 }
 
@@ -63,7 +65,7 @@ function loadCharges() {
       email: (r.customer_email || '').toLowerCase(),
       customerId: r.customer_id || '',
       invoiceId: r.invoice_id || '',
-      product: normalizeProduct(r.description),
+      product: normalizeProduct(r.description, amount),
       channel: r.channel || (r.invoice_id ? 'native_stripe_sub' : 'kartra_orchestrated'),
       status,
     });

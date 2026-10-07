@@ -65,8 +65,11 @@ let warmedAt = null;
 let lastSyncAt = null;
 let lastSyncResult = null;
 const scannedUntil = {};   // account → newest `created` seen this process (incl. non-Atomic subs)
+const fullScanned = {};    // account → true once this process has read every subscription
 
 const isAtomicHomework = (name) => /atomic\s*homework/i.test(name || '');
+// "AWD Upsell" at €39 is Atomic Homework sold as the dictionary one-click upsell.
+const isAwdUpsell = (name, amount) => /awd\s*upsell/i.test(name || '') && Math.abs((amount || 0) - 39) < 0.01;
 const isDictionary = (desc) => /atomic word dictionary|word dictionary/i.test(desc || '');
 
 // ─── Stripe helpers ──────────────────────────────────────────────────
@@ -132,8 +135,13 @@ function mapSubscription(account, s, names) {
   const productIds = subProductIds(s);
   const productName = names ? productIds.map((id) => names.get(id) || '').find(Boolean) || '' : '';
   const tag = (s.metadata?.source || '').trim().toLowerCase();
+  const awd = (s.items?.data || []).some((it) => {
+    const p = it.price?.product ?? it.plan?.product;
+    const name = names?.get(typeof p === 'object' && p ? p.id : p) || it.price?.nickname || it.plan?.nickname || '';
+    return isAwdUpsell(name, (it.price?.unit_amount ?? it.plan?.amount ?? 0) / 100);
+  });
   // Tagged checkout links are only made for Atomic Homework, so a tag counts even if the product is named differently.
-  if (ACCOUNTS[account].atomicOnly && !TAGGABLE.has(tag) && !subNames(s, names).some(isAtomicHomework)) return null;
+  if (ACCOUNTS[account].atomicOnly && !TAGGABLE.has(tag) && !awd && !subNames(s, names).some(isAtomicHomework)) return null;
 
   let customerId = '';
   let email = '';
@@ -153,6 +161,7 @@ function mapSubscription(account, s, names) {
     customer_email: email,
     product_name: productName,
     source_tag: tag,
+    awd_upsell: awd,
   };
 }
 
@@ -199,7 +208,9 @@ export async function syncMembers() {
     const key = process.env[cfg.env];
     if (!key) { result[account] = { skipped: `${cfg.env} not set` }; continue; }
     try {
-      const sinceTs = subs.filter((s) => s.account === account)
+      // First sync after each restart re-reads everything, so a changed matching rule
+      // (e.g. a new product name) also applies to older subscriptions.
+      const sinceTs = !fullScanned[account] ? 0 : subs.filter((s) => s.account === account)
         .reduce((m, s) => Math.max(m, s.created || 0), scannedUntil[account] || 0);
       const params = [['status', 'all'], ['expand[]', 'data.customer']];
       if (sinceTs) params.push(['created[gt]', String(sinceTs)]);
@@ -221,6 +232,7 @@ export async function syncMembers() {
       }
       // Only move the cursor past subscriptions we kept: if none matched, the next sync retries them.
       if (rows.length) for (const s of raw) scannedUntil[account] = Math.max(scannedUntil[account] || 0, s.created || 0);
+      fullScanned[account] = true;
     } catch (err) {
       console.error(`[members] ${account} sync failed:`, err.message);
       result[account] = { error: err.message };
@@ -257,6 +269,7 @@ export function buildMembers() {
   const join = new Map();       // ident → earliest join (unix s)
   const joinVia = new Map();    // ident → 'paypal' | 'stripe' (how that first payment was made)
   const joinAmount = new Map(); // ident → amount of that first payment
+  const joinAwd = new Set();    // idents whose first purchase was the €39 "AWD Upsell"
   const mainSubs = new Map();   // ident → [subs]
   const dictBuys = new Map();   // ident → [dictionary purchase times]
   for (const c of getCachedCharges()) {
@@ -271,11 +284,13 @@ export function buildMembers() {
     }
     const net = (parseFloat(c.amount) || 0) - (parseFloat(c.amount_refunded) || 0);
     // ThriveCart charges are counted from that account's subscriptions above.
-    if (c.channel === 'thrivecart' || c.status !== 'Paid' || net <= 0 || !isAtomicHomework(c.description)) continue;
+    const awd = isAwdUpsell(c.description, parseFloat(c.amount) || 0);
+    if (c.channel === 'thrivecart' || c.status !== 'Paid' || net <= 0 || !(awd || isAtomicHomework(c.description))) continue;
     if (!join.has(id) || ts < join.get(id)) {
       join.set(id, ts);
       joinVia.set(id, c.channel === 'paypal' ? 'paypal' : 'stripe');
       joinAmount.set(id, parseFloat(c.amount) || 0);
+      if (awd) joinAwd.add(id); else joinAwd.delete(id);
     }
   }
   for (const s of subs) {
@@ -288,6 +303,7 @@ export function buildMembers() {
       join.set(id, s.start);
       joinVia.set(id, 'stripe');
       joinAmount.delete(id);
+      if (s.awd_upsell) joinAwd.add(id); else joinAwd.delete(id);
     }
   }
 
@@ -302,6 +318,7 @@ export function buildMembers() {
     const byPrice = via === 'paypal' && date >= PAYPAL_PRICE_RULE_FROM;
     let source;
     if (tagSub) { source = tagSub.source_tag; tagged++; }
+    else if (joinAwd.has(id)) source = 'dictionary_ad_upsell';
     else if (byPrice && Math.abs(amount - STORE_PRICE) < 0.01) source = 'store';
     else {
       const lastDict = Math.max(-Infinity, ...(dictBuys.get(id) || []).filter((t) => t <= date));
