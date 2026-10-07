@@ -429,9 +429,10 @@ function renderLinks(data) {
     html += '<div style="margin-top:.9rem">Pick a checkout link you use today and where the copy is for. Each copy keeps the same price, thank-you page and settings. ' +
       'Tip: match the code after <code>buy.stripe.com/</code> with the link on your page.</div>' +
       '<div style="display:flex;flex-direction:column;gap:10px;margin-top:.6rem"><select id="tpl">' +
-      data.templates.map((t) => `<option value="${esc(t.id)}">${esc(t.price)} · ${esc(t.product)} · ${esc(t.url)} → ${esc(t.thankYou)}</option>`).join('') +
+      data.templates.map((t) => `<option value="${esc(t.id)}" data-trial="${t.trialDays || 0}">${esc(t.price)}${t.trialDays ? ` · ${t.trialDays}-day free trial` : ''} · ${esc(t.product)} · ${esc(t.url)} → ${esc(t.thankYou)}</option>`).join('') +
       '</select><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">' +
       Object.entries(LINK_LABELS).map(([k, v]) => `<label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" class="src-cb" value="${k}"> ${esc(v)}</label>`).join('') +
+      '<label id="notrial-wrap" style="display:none;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="notrial"> Without the free trial</label>' +
       '<button class="btn primary" id="make-links">Create tagged links</button></div></div>' +
       (data.saved?.length ? '<div class="dim" style="margin-top:.6rem">When you are done, remove <code>STRIPE_WRITE_KEY</code> from Railway and delete that key in Stripe. The links above keep working.</div>' : '');
   }
@@ -452,6 +453,14 @@ function renderLinks(data) {
       await loadLinks();
     } catch (err) { toast(err.message, true); b.disabled = false; }
   }));
+  const tpl = document.getElementById('tpl');
+  const syncTrial = () => {
+    const opt = tpl.selectedOptions[0];
+    const has = opt && +opt.dataset.trial > 0;
+    document.getElementById('notrial-wrap').style.display = has ? 'inline-flex' : 'none';
+    if (!has) document.getElementById('notrial').checked = false;
+  };
+  if (tpl) { tpl.addEventListener('change', syncTrial); syncTrial(); }
   const btn = document.getElementById('make-links');
   if (btn) btn.addEventListener('click', async () => {
     const sources = [...card.querySelectorAll('.src-cb:checked')].map((c) => c.value);
@@ -460,7 +469,7 @@ function renderLinks(data) {
     try {
       const res = await authFetch('/api/source-links', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: document.getElementById('tpl').value, sources }),
+        body: JSON.stringify({ templateId: tpl.value, sources, noTrial: document.getElementById('notrial').checked }),
       });
       const out = await res.json();
       if (!res.ok) throw new Error(out.error || 'HTTP ' + res.status);

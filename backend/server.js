@@ -131,7 +131,7 @@ app.post('/api/source-links', auth, async (req, res) => {
   if (!/^plink_\w+$/.test(templateId)) return res.status(400).json({ error: 'Pick a checkout link to copy.' });
   try {
     const sources = Array.isArray(req.body?.sources) ? req.body.sources.map(String) : undefined;
-    res.json({ ok: true, links: await createTaggedLinks(templateId, sources) });
+    res.json({ ok: true, links: await createTaggedLinks(templateId, sources, req.body?.noTrial === true) });
   } catch (err) {
     console.error('[/api/source-links] create failed:', err);
     res.status(500).json({ error: err.message });

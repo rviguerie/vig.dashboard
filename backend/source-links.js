@@ -76,13 +76,14 @@ export async function listTemplates() {
       product: productName,
       price: describePrice(line.price),
       thankYou: l.after_completion?.type === 'redirect' ? l.after_completion.redirect.url : 'Stripe confirmation page',
+      trialDays: l.subscription_data?.trial_period_days || 0,
     });
   }
   return out.sort((a, b) => (b.atomic - a.atomic) || a.product.localeCompare(b.product) || a.price.localeCompare(b.price));
 }
 
 /** Form params for a copy of `t` tagged with `source`. */
-function copyParams(t, items, source) {
+function copyParams(t, items, source, noTrial) {
   const p = [];
   items.forEach((it, i) => {
     p.push([`line_items[${i}][price]`, it.price.id], [`line_items[${i}][quantity]`, String(it.quantity || 1)]);
@@ -100,7 +101,7 @@ function copyParams(t, items, source) {
   if (t.payment_method_collection) p.push(['payment_method_collection', t.payment_method_collection]);
   for (const m of t.payment_method_types || []) p.push(['payment_method_types[]', m]);
   const sd = t.subscription_data || {};
-  if (sd.trial_period_days) p.push(['subscription_data[trial_period_days]', String(sd.trial_period_days)]);
+  if (sd.trial_period_days && !noTrial) p.push(['subscription_data[trial_period_days]', String(sd.trial_period_days)]);
   if (sd.description) p.push(['subscription_data[description]', sd.description]);
   // Keep any metadata the original carries (automations may rely on it), then add the tag.
   for (const [k, v] of Object.entries(t.metadata || {})) p.push([`metadata[${k}]`, v]);
@@ -110,7 +111,7 @@ function copyParams(t, items, source) {
 }
 
 /** Create (or reuse) tagged copies of template `templateId`, one per source, and save them. */
-export async function createTaggedLinks(templateId, sources = LINK_SOURCES) {
+export async function createTaggedLinks(templateId, sources = LINK_SOURCES, noTrial = false) {
   sources = LINK_SOURCES.filter((s) => sources.includes(s));
   if (!sources.length) throw new Error('Pick at least one place the link is for.');
   const t = await stripe('GET', `/payment_links/${templateId}`);
@@ -119,15 +120,22 @@ export async function createTaggedLinks(templateId, sources = LINK_SOURCES) {
   const existing = await listAll('/payment_links', [['active', 'true']]);
   const rows = [];
   for (const source of sources) {
-    let link = existing.find((l) => l.metadata?.source === source && l.metadata?.copied_from === templateId);
-    if (!link) link = await stripe('POST', '/payment_links', copyParams(t, items, source));
+    const trialTag = noTrial && t.subscription_data?.trial_period_days ? 'none' : '';
+    let link = existing.find((l) => l.metadata?.source === source && l.metadata?.copied_from === templateId &&
+      (l.metadata?.trial || '') === trialTag);
+    if (!link) {
+      const params = copyParams(t, items, source, noTrial);
+      if (trialTag) params.push(['metadata[trial]', trialTag]);
+      link = await stripe('POST', '/payment_links', params);
+    }
+    const trialDays = trialTag ? 0 : (t.subscription_data?.trial_period_days || 0);
     rows.push({
       id: link.id,
       source,
       url: link.url,
       copied_from: templateId,
       product: items[0].price?.product?.name || '',
-      price: describePrice(items[0].price),
+      price: describePrice(items[0].price) + (trialDays ? ` · ${trialDays}-day free trial` : ''),
       created: link.created || Math.floor(Date.now() / 1000),
     });
   }

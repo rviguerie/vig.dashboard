@@ -14,7 +14,7 @@
 import { getCachedCharges } from './cache.js';
 
 const PRICE_RULES = {
-  'Mr. Vigs Atomic Homework': [[29, 1], [33.5, 1], [36, 1], [39, 1], [49, 1], [71, 1], [261, 12], [268, 12], [300.5, 12], [351, 12], [441, 12]],
+  'Mr. Vigs Atomic Homework': [[29, 1], [33.5, 1], [39, 1], [49, 1], [71, 1], [261, 12], [268, 12], [300.5, 12], [351, 12], [441, 12]],
   'Vig Village': [[60, 1], [99, 1], [198, 2], [540, 12], [594, 12], [792, 12], [891, 12]],
   'Vitamin V EXTRA STRENGTH': [[29, 1]],
   'Speaking School': [[29, 1], [87, 3]],
