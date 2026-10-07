@@ -15,11 +15,12 @@
  *               Join date = earliest of their Atomic Homework subscription
  *               start and their first paid Atomic Homework charge in the
  *               existing `charges` ledger (covers Kartra-orchestrated members
- *               who never had a Stripe subscription object). PayPal is left
- *               out since it isn't either Stripe account.
+ *               who never had a Stripe subscription object) and PayPal
+ *               payments. The same person paying by Stripe and PayPal (same
+ *               email) counts once.
  *               Source:
  *                 1. the subscription's metadata.source tag, set by the
- *                    tagged checkout links (see make-source-links.js)
+ *                    tagged checkout links (see source-links.js)
  *                 2. otherwise, by their last Atomic Word Dictionary purchase
  *                    on or before joining:
  *                      within 1 hour → 'dictionary_ad_upsell' (the one-click
@@ -209,10 +210,11 @@ export function buildMembers() {
     if (!id) continue;
     if (!tc.has(id) || s.start < tc.get(id)) tc.set(id, s.start);
   }
-  for (const date of tc.values()) members.push({ date, account: 'thrivecart', source: 'dictionary_ad_upsell' });
+  for (const date of tc.values()) members.push({ date, account: 'thrivecart', source: 'dictionary_ad_upsell', via: 'stripe' });
 
   // Main account: ledger charges + subscriptions.
   const join = new Map();       // ident → earliest join (unix s)
+  const joinVia = new Map();    // ident → 'paypal' | 'stripe' (how that first payment was made)
   const mainSubs = new Map();   // ident → [subs]
   const dictBuys = new Map();   // ident → [dictionary purchase times]
   for (const c of getCachedCharges()) {
@@ -227,8 +229,11 @@ export function buildMembers() {
     }
     const net = (parseFloat(c.amount) || 0) - (parseFloat(c.amount_refunded) || 0);
     // ThriveCart charges are counted from that account's subscriptions above.
-    if (c.channel === 'paypal' || c.channel === 'thrivecart' || c.status !== 'Paid' || net <= 0 || !isAtomicHomework(c.description)) continue;
-    if (!join.has(id) || ts < join.get(id)) join.set(id, ts);
+    if (c.channel === 'thrivecart' || c.status !== 'Paid' || net <= 0 || !isAtomicHomework(c.description)) continue;
+    if (!join.has(id) || ts < join.get(id)) {
+      join.set(id, ts);
+      joinVia.set(id, c.channel === 'paypal' ? 'paypal' : 'stripe');
+    }
   }
   for (const s of subs) {
     if (s.account !== 'main') continue;
@@ -236,10 +241,14 @@ export function buildMembers() {
     if (!id) continue;
     if (!mainSubs.has(id)) mainSubs.set(id, []);
     mainSubs.get(id).push(s);
-    if (!join.has(id) || s.start < join.get(id)) join.set(id, s.start);
+    if (!join.has(id) || s.start < join.get(id)) {
+      join.set(id, s.start);
+      joinVia.set(id, 'stripe');
+    }
   }
 
   let tagged = 0;
+  let paypal = 0;
   for (const [id, date] of join) {
     const tagSub = (mainSubs.get(id) || [])
       .filter((s) => TAGGABLE.has(s.source_tag) && Math.abs(s.start - date) <= TAG_MATCH_WINDOW)
@@ -251,7 +260,9 @@ export function buildMembers() {
       if (!isFinite(lastDict)) source = 'store_or_daily';
       else source = date - lastDict <= UPSELL_PAGE_WINDOW ? 'dictionary_ad_upsell' : 'upsell_email';
     }
-    members.push({ date, account: 'main', source });
+    const via = joinVia.get(id) || 'stripe';
+    if (via === 'paypal') paypal++;
+    members.push({ date, account: 'main', source, via });
   }
 
   members.sort((a, b) => a.date - b.date);
@@ -262,6 +273,7 @@ export function buildMembers() {
       mainSubs: subs.filter((s) => s.account === 'main').length,
       dictionaryBuyers: dictBuys.size,
       taggedMembers: tagged,
+      paypalMembers: paypal,
     },
   };
 }
