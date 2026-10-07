@@ -101,7 +101,9 @@ function mapSubscription(account, s, names) {
     return typeof p === 'object' && p ? p.id : p || '';
   });
   const productName = names ? productIds.map((id) => names.get(id) || '').find(Boolean) || '' : '';
-  if (ACCOUNTS[account].atomicOnly && !productIds.some((id) => isAtomicHomework(names?.get(id)))) return null;
+  const tag = (s.metadata?.source || '').trim().toLowerCase();
+  // Tagged checkout links are only made for Atomic Homework, so a tag counts even if the product is named differently.
+  if (ACCOUNTS[account].atomicOnly && !TAGGABLE.has(tag) && !productIds.some((id) => isAtomicHomework(names?.get(id)))) return null;
 
   let customerId = '';
   let email = '';
@@ -111,7 +113,6 @@ function mapSubscription(account, s, names) {
   } else {
     customerId = s.customer || '';
   }
-  const tag = (s.metadata?.source || '').trim().toLowerCase();
   return {
     id: `${account}_${s.id}`,
     account,

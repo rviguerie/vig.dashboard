@@ -9,6 +9,7 @@
  *   GET  /api/members          Atomic Homework member join dates + sources (auth required)
  *   GET  /api/source-links     Saved tagged checkout links (+ copyable links if write key set)
  *   POST /api/source-links     Create tagged copies of a checkout link (needs STRIPE_WRITE_KEY)
+ *   POST /api/source-links/deactivate  Switch off a tagged copy (needs STRIPE_WRITE_KEY)
  *   GET  /                     → /login (or /dashboard if authed in browser)
  *   /login, /dashboard         Static HTML
  *
@@ -31,7 +32,7 @@ import { refreshFromStripe } from './stripe-refresh.js';
 import { refreshPayPal } from './paypal-refresh.js';
 import { chatWithData } from './chat.js';
 import { warmMembers, syncMembers, buildMembers, getMembersMeta, SOURCES } from './members.js';
-import { hasWriteKey, listTemplates, createTaggedLinks, savedLinks } from './source-links.js';
+import { hasWriteKey, listTemplates, createTaggedLinks, savedLinks, deactivateLink } from './source-links.js';
 import { startCron } from './cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -129,9 +130,23 @@ app.post('/api/source-links', auth, async (req, res) => {
   const templateId = String(req.body?.templateId || '');
   if (!/^plink_\w+$/.test(templateId)) return res.status(400).json({ error: 'Pick a checkout link to copy.' });
   try {
-    res.json({ ok: true, links: await createTaggedLinks(templateId) });
+    const sources = Array.isArray(req.body?.sources) ? req.body.sources.map(String) : undefined;
+    res.json({ ok: true, links: await createTaggedLinks(templateId, sources) });
   } catch (err) {
     console.error('[/api/source-links] create failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/source-links/deactivate', auth, async (req, res) => {
+  if (!hasWriteKey()) return res.status(400).json({ error: 'STRIPE_WRITE_KEY is not set in Railway.' });
+  const id = String(req.body?.id || '');
+  if (!/^plink_\w+$/.test(id)) return res.status(400).json({ error: 'Bad link id.' });
+  try {
+    await deactivateLink(id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[/api/source-links] deactivate failed:', err);
     res.status(500).json({ error: err.message });
   }
 });

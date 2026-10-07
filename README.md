@@ -138,11 +138,11 @@ Main-account members come from Atomic Homework subscriptions plus the first paid
 
 ### Tagged checkout links (one time)
 
-The members page has a **Tagged checkout links** section. It copies your existing Atomic Homework Stripe Payment Link three times (same price, thank-you page and checkout settings), tagging each copy `store`, `upsell_email` or `daily_email`. The tag is stamped on every subscription the link creates.
+The members page has a **Tagged checkout links** section. Pick one of your existing Stripe Payment Links and tick where the copy is for (store, upsell emails, daily emails). Each copy keeps the price, thank-you page and checkout settings, and stamps `metadata.source` on every subscription it creates. Tagged subscriptions count as Atomic Homework members whatever the product is called. Copies can be switched off from the same section while the write key is set.
 
 1. In the main Stripe account, create a restricted key with **Payment Links: Write, Products: Read, Prices: Read**.
 2. Add it in Railway as `STRIPE_WRITE_KEY` and deploy.
-3. On the members page, pick the link to copy and click **Create tagged links**. Re-running reuses existing copies.
+3. On the members page, pick the link to copy, tick where it's for and click **Create tagged links**. Re-running reuses existing copies.
 4. Remove `STRIPE_WRITE_KEY` from Railway and delete the key in Stripe. The links are saved in Firestore (`source_links`) and keep showing on the page.
 
 Put the store link on the store page, the upsell-emails link in the upsell emails and the daily-emails link in the daily emails.
