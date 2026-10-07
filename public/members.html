@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Mr. Vig LLC — Where members come from</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--s-store:#3987e5;--s-upsell_email:#d95926;--s-daily_email:#199e70;--s-store_or_daily:#c98500;--s-thrivecart_upsell:#d55181}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e8e9ec;min-height:100vh;padding:2rem;max-width:1400px;margin:0 auto}
+@media(max-width:700px){body{padding:1rem}}
+h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
+.subtitle{font-size:12px;color:#6b7280;margin-bottom:1.5rem}
+a{color:#8b95c9;text-decoration:none}
+a:hover{text-decoration:underline}
+.toast{position:fixed;top:1.5rem;right:1.5rem;background:#1a1d2e;border:1px solid #2d3148;border-radius:8px;padding:.75rem 1.25rem;font-size:13px;color:#e8e9ec;display:none;z-index:999;max-width:420px}
+.toast.show{display:block}
+.toast.error{border-color:#7f1d1d;color:#f87171}
+.status-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.7rem 1.1rem;margin-bottom:1rem;font-size:13px;flex-wrap:wrap}
+.status-bar .left,.status-bar .right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#34d399;margin-right:6px;vertical-align:middle}
+.status-dot.warn{background:#fb923c}
+.status-dot.bad{background:#f87171}
+.info{color:#9ca3af}
+.info strong{color:#e8e9ec}
+.user-pill{font-size:12px;color:#9ca3af;background:#1a1d2e;border:1px solid #2d3148;border-radius:6px;padding:5px 10px}
+.btn{font-size:12px;color:#9ca3af;border:1px solid #2d3148;border-radius:6px;padding:6px 12px;cursor:pointer;background:transparent;white-space:nowrap;font-family:inherit}
+.btn:hover{background:#1a1d2e;color:#e8e9ec}
+.btn.primary{color:#e8e9ec;background:#1a1d2e;border-color:#4a5080}
+.btn:disabled{opacity:.5;cursor:wait}
+.filter-bar{display:flex;flex-wrap:wrap;align-items:center;gap:14px;background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.85rem 1.1rem;margin-bottom:1.5rem}
+.filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.filter-bar label{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.filter-bar input[type=date]{font-size:13px;padding:5px 10px;border:1px solid #2d3148;border-radius:6px;background:#1a1d2e;color:#e8e9ec;font-family:inherit;color-scheme:dark}
+.seg{display:inline-flex;border:1px solid #2d3148;border-radius:6px;overflow:hidden}
+.seg button{font-size:12px;padding:5px 12px;background:transparent;color:#9ca3af;border:none;cursor:pointer;font-family:inherit}
+.seg button.on{background:#2d3148;color:#e8e9ec}
+.preset{font-size:11px;color:#9ca3af;cursor:pointer;padding:4px 8px;border-radius:4px}
+.preset:hover{background:#1a1d2e;color:#e8e9ec}
+.section{margin-bottom:1.75rem}
+.section-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #1e2035}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.metric{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.9rem 1rem}
+.metric-label{font-size:11px;color:#9ca3af;margin-bottom:.35rem;display:flex;align-items:center;gap:6px}
+.metric-value{font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.metric-sub{font-size:11px;color:#6b7280;margin-top:.3rem}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.chart-card{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:1rem 1.25rem;position:relative}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:#9ca3af;margin-bottom:.9rem}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.stack-chart{display:flex;align-items:stretch;gap:3px;height:240px;overflow-x:auto}
+.stack-chart .col{flex:1;min-width:14px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:default}
+.stack-chart .tot{font-size:10px;color:#9ca3af;font-variant-numeric:tabular-nums;height:14px;white-space:nowrap}
+.stack-chart .track{flex:1;width:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;overflow:hidden}
+.stack-chart .seg-fill{width:100%}
+.stack-chart .seg-fill:first-child{border-radius:4px 4px 0 0}
+.stack-chart .lbl{font-size:10px;color:#6b7280;white-space:nowrap;height:14px}
+.stack-chart.crowded .tot{display:none}
+.stack-chart.crowded .lbl{visibility:hidden}
+.stack-chart.crowded .col:nth-child(4n+1) .lbl{visibility:visible}
+.stack-chart .col:hover .track{opacity:.85}
+@media(max-width:700px){.stack-chart .tot{display:none}.stack-chart .lbl{visibility:hidden}.stack-chart .col:nth-child(4n+1) .lbl{visibility:visible}}
+.tip{position:absolute;pointer-events:none;background:#0f1117;border:1px solid #2d3148;border-radius:8px;padding:.55rem .75rem;font-size:12px;display:none;z-index:10;min-width:200px;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+.tip .h{font-weight:600;margin-bottom:.35rem}
+.tip .r{display:flex;align-items:center;gap:6px;color:#9ca3af;line-height:1.7}
+.tip .r b{margin-left:auto;color:#e8e9ec;font-weight:500;font-variant-numeric:tabular-nums}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:right;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;padding:.6rem .75rem;border-bottom:1px solid #1e2035;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;white-space:nowrap}
+td{padding:.55rem .75rem;border-bottom:1px solid #1a1d2e;text-align:right;font-variant-numeric:tabular-nums}
+td.zero{color:#4b5563}
+tr.totals td{font-weight:600;border-top:1px solid #2d3148}
+.note{font-size:12px;color:#6b7280;margin-top:.6rem;line-height:1.6}
+.warn-box{background:#2a1f12;border:1px solid #7c4a12;color:#fbbf24;border-radius:8px;padding:.6rem .9rem;font-size:12px;margin-bottom:1rem;display:none}
+.empty{font-size:13px;color:#4b5563;text-align:center;padding:3rem 0}
+</style>
+</head>
+<body>
+<h1>Where members come from</h1>
+<p class="subtitle">New Atomic Homework members per source · main Stripe account + ThriveCart Stripe account</p>
+
+<div class="toast" id="toast"></div>
+
+<div class="status-bar">
+  <div class="left">
+    <a href="/dashboard">← Back to dashboard</a>
+    <div class="info" id="status-text"><span class="status-dot warn"></span>Loading…</div>
+  </div>
+  <div class="right">
+    <span class="user-pill" id="user-pill"></span>
+    <button class="btn primary" id="refresh-btn">↻ Refresh from Stripe</button>
+    <button class="btn" id="signout-btn">Sign out</button>
+  </div>
+</div>
+
+<div class="warn-box" id="warn-box"></div>
+
+<div id="page" style="display:none">
+  <div class="filter-bar">
+    <div class="filter-group">
+      <label>Group by</label>
+      <div class="seg" id="grain">
+        <button data-g="week" class="on">Week</button>
+        <button data-g="month">Month</button>
+      </div>
+    </div>
+    <div class="filter-group"><label>From</label><input type="date" id="f-start"></div>
+    <div class="filter-group"><label>To</label><input type="date" id="f-end"></div>
+    <div class="filter-group">
+      <span class="preset" data-days="84">Last 12 weeks</span>
+      <span class="preset" data-days="182">Last 6 months</span>
+      <span class="preset" data-days="365">Last 12 months</span>
+      <span class="preset" data-days="all">All time</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">New members in window · by source</div>
+    <div class="metric-grid" id="tiles"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title" id="chart-title">New members per week</div>
+    <div class="chart-card" id="chart-card">
+      <div class="legend" id="legend"></div>
+      <div class="stack-chart" id="chart"></div>
+      <div class="tip" id="tip"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title" id="table-title">Table</div>
+    <div class="table-wrap"><table id="table"></table></div>
+    <div class="note" id="method-note"></div>
+  </div>
+</div>
+
+<div id="empty" class="empty" style="display:none">No members found yet.</div>
+
+<script src="/firebase-config.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
+
+// Fixed order = fixed color. Never reorder by rank.
+const ORDER = ['store', 'upsell_email', 'daily_email', 'store_or_daily', 'thrivecart_upsell'];
+const color = (s) => `var(--s-${s})`;
+const DAY = 86400000;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const fmt = (n) => Math.round(n).toLocaleString('en-US');
+const ymd = (d) => d.toISOString().slice(0, 10);
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+let firebaseAuth = null;
+let members = [];      // [{ date: Date, source }]
+let labels = {};
+let grain = 'week';
+let minDate = null, maxDate = null;
+
+function toast(msg, isErr) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' error' : '');
+  setTimeout(() => { el.className = 'toast'; }, 4000);
+}
+
+const cfg = window.FIREBASE_CONFIG;
+if (!cfg || !cfg.apiKey) {
+  document.getElementById('status-text').innerHTML = '<span class="status-dot bad"></span>Firebase is not configured on the server.';
+} else {
+  firebaseAuth = getAuth(initializeApp(cfg));
+  onAuthStateChanged(firebaseAuth, (user) => {
+    if (!user) { location.href = '/login'; return; }
+    document.getElementById('user-pill').textContent = user.email;
+    load();
+  });
+}
+document.getElementById('signout-btn').addEventListener('click', () => {
+  if (firebaseAuth) signOut(firebaseAuth).then(() => location.href = '/login');
+});
+
+async function authFetch(url, opts = {}) {
+  const token = await firebaseAuth.currentUser.getIdToken();
+  return fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token } });
+}
+
+async function load() {
+  try {
+    const res = await authFetch('/api/members');
+    if (res.status === 401 || res.status === 403) { location.href = '/login'; return; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.warming) {
+      document.getElementById('status-text').innerHTML = '<span class="status-dot warn"></span>Server warming up — loading data…';
+      setTimeout(load, 2500);
+      return;
+    }
+    labels = data.sources || {};
+    members = (data.members || []).map((m) => ({ date: new Date(m.date * 1000), source: m.source }));
+    showStatus(data);
+    showWarnings(data);
+    if (!members.length) {
+      document.getElementById('page').style.display = 'none';
+      document.getElementById('empty').style.display = 'block';
+      return;
+    }
+    document.getElementById('empty').style.display = 'none';
+    document.getElementById('page').style.display = 'block';
+    minDate = members[0].date;
+    maxDate = new Date(Math.max(Date.now(), members[members.length - 1].date.getTime()));
+    if (!document.getElementById('f-start').value) setRange(84); else render();
+  } catch (err) {
+    document.getElementById('status-text').innerHTML = '<span class="status-dot bad"></span>Load failed: ' + esc(err.message);
+  }
+}
+
+function showStatus(data) {
+  const last = data.lastSyncAt ? new Date(data.lastSyncAt).toLocaleString() : 'not yet';
+  document.getElementById('status-text').innerHTML =
+    `<span class="status-dot"></span><strong>${fmt(data.members.length)}</strong> members · Last subscription sync: <strong>${esc(last)}</strong>`;
+}
+
+function showWarnings(data) {
+  const w = [];
+  if (!data.configured?.main) w.push('Main account key (STRIPE_KEY) is not set.');
+  if (!data.configured?.thrivecart) w.push('ThriveCart account key (STRIPE_THRIVECART_KEY) is not set, so ThriveCart members are missing.');
+  for (const [acct, r] of Object.entries(data.lastSyncResult || {})) {
+    if (r && r.error) w.push(`${acct === 'main' ? 'Main' : 'ThriveCart'} account sync failed: ${r.error}`);
+  }
+  if (data.configured?.thrivecart && data.lastSyncAt && !data.stats.thrivecartSubs) {
+    w.push('The ThriveCart account returned no subscriptions. If ThriveCart bills with one-off charges instead of Stripe subscriptions, this page will need to count charges there instead.');
+  }
+  const box = document.getElementById('warn-box');
+  box.innerHTML = w.map(esc).join('<br>');
+  box.style.display = w.length ? 'block' : 'none';
+  const s = data.stats || {};
+  document.getElementById('method-note').innerHTML =
+    'How sources are worked out: ThriveCart account members are all counted as the dictionary-ad upsell. ' +
+    'In the main account, a member who joined through one of the tagged checkout links gets that link\'s source. ' +
+    'Everyone else is "Upsell emails" if they bought the Atomic Word Dictionary on or before joining, otherwise "Store or daily email". ' +
+    'Each person counts once per account, on the date they first joined. PayPal members are not included. ' +
+    `<br>Found: ${fmt(s.dictionaryBuyers || 0)} dictionary buyers · ${fmt(s.taggedMembers || 0)} members from tagged links · ` +
+    `${fmt(s.mainSubs || 0)} main-account subscriptions · ${fmt(s.thrivecartSubs || 0)} ThriveCart subscriptions.`;
+}
+
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true; btn.textContent = '↻ Refreshing…';
+  try {
+    const res = await authFetch('/api/refresh', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Refresh failed');
+    toast('Refresh done.');
+    await load();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = '↻ Refresh from Stripe';
+  }
+});
+
+// ─── Periods (UTC; weeks start Monday) ───────────────────────────────
+function periodStart(d) {
+  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  if (grain === 'month') { x.setUTCDate(1); return x; }
+  const dow = (x.getUTCDay() + 6) % 7; // Mon=0
+  return new Date(x.getTime() - dow * DAY);
+}
+function nextPeriod(d) {
+  const x = new Date(d);
+  if (grain === 'month') x.setUTCMonth(x.getUTCMonth() + 1); else x.setUTCDate(x.getUTCDate() + 7);
+  return x;
+}
+function periodLabel(d, long) {
+  const m = MONTHS[d.getUTCMonth()];
+  if (grain === 'month') return long ? `${m} ${d.getUTCFullYear()}` : `${m} '${String(d.getUTCFullYear()).slice(2)}`;
+  return long ? `Week of ${m} ${d.getUTCDate()}, ${d.getUTCFullYear()}` : `${m} ${d.getUTCDate()}`;
+}
+
+function setRange(days) {
+  const end = maxDate;
+  const start = days === 'all' ? minDate : new Date(end.getTime() - days * DAY);
+  document.getElementById('f-start').value = ymd(start);
+  document.getElementById('f-end').value = ymd(end);
+  render();
+}
+
+function render() {
+  const start = new Date(document.getElementById('f-start').value + 'T00:00:00Z');
+  const end = new Date(document.getElementById('f-end').value + 'T23:59:59Z');
+  if (isNaN(start) || isNaN(end)) return;
+  const inWin = members.filter((m) => m.date >= start && m.date <= end);
+
+  // Only show sources that have ever had a member, in fixed order.
+  const present = new Set(members.map((m) => m.source));
+  const sources = ORDER.filter((s) => present.has(s));
+
+  // Buckets
+  const buckets = new Map();
+  for (let p = periodStart(start); p <= end; p = nextPeriod(p)) buckets.set(p.getTime(), Object.fromEntries(sources.map((s) => [s, 0])));
+  const totals = Object.fromEntries(sources.map((s) => [s, 0]));
+  for (const m of inWin) {
+    const b = buckets.get(periodStart(m.date).getTime());
+    if (b && m.source in b) { b[m.source]++; totals[m.source]++; }
+  }
+  const rows = [...buckets.entries()].map(([t, counts]) => ({ start: new Date(t), counts, total: sources.reduce((a, s) => a + counts[s], 0) }));
+  const grand = sources.reduce((a, s) => a + totals[s], 0);
+
+  // Tiles
+  document.getElementById('tiles').innerHTML =
+    `<div class="metric"><div class="metric-label">All sources</div><div class="metric-value">${fmt(grand)}</div><div class="metric-sub">new members in window</div></div>` +
+    sources.map((s) => `<div class="metric"><div class="metric-label"><span class="sw" style="background:${color(s)}"></span>${esc(labels[s] || s)}</div>` +
+      `<div class="metric-value">${fmt(totals[s])}</div><div class="metric-sub">${grand ? Math.round(100 * totals[s] / grand) : 0}% of new members</div></div>`).join('');
+
+  // Chart
+  const unit = grain === 'week' ? 'week' : 'month';
+  document.getElementById('chart-title').textContent = `New members per ${unit}`;
+  document.getElementById('table-title').textContent = `New members per ${unit} · table`;
+  document.getElementById('legend').innerHTML = sources.map((s) => `<span><span class="sw" style="background:${color(s)}"></span>${esc(labels[s] || s)}</span>`).join('');
+  const max = Math.max(1, ...rows.map((r) => r.total));
+  const chart = document.getElementById('chart');
+  chart.className = 'stack-chart' + (rows.length > 26 ? ' crowded' : '');
+  chart.innerHTML = rows.map((r, i) => {
+    const segs = [...sources].reverse().filter((s) => r.counts[s] > 0)
+      .map((s) => `<div class="seg-fill" style="height:${(r.counts[s] / max) * 100}%;background:${color(s)}"></div>`).join('');
+    return `<div class="col" data-i="${i}"><span class="tot">${r.total ? fmt(r.total) : ''}</span>` +
+      `<div class="track">${segs}</div><span class="lbl">${esc(periodLabel(r.start))}</span></div>`;
+  }).join('');
+
+  const tip = document.getElementById('tip');
+  const card = document.getElementById('chart-card');
+  chart.querySelectorAll('.col').forEach((col) => {
+    col.addEventListener('mousemove', (e) => {
+      const r = rows[+col.dataset.i];
+      tip.innerHTML = `<div class="h">${esc(periodLabel(r.start, true))}</div>` +
+        sources.map((s) => `<div class="r"><span class="sw" style="background:${color(s)}"></span>${esc(labels[s] || s)}<b>${fmt(r.counts[s])}</b></div>`).join('') +
+        `<div class="r" style="border-top:1px solid #2d3148;margin-top:4px;padding-top:2px">Total<b>${fmt(r.total)}</b></div>`;
+      tip.style.display = 'block';
+      const box = card.getBoundingClientRect();
+      let x = e.clientX - box.left + 14;
+      if (x + tip.offsetWidth > box.width) x = e.clientX - box.left - tip.offsetWidth - 14;
+      tip.style.left = Math.max(0, x) + 'px';
+      tip.style.top = (e.clientY - box.top + 10) + 'px';
+    });
+    col.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  });
+
+  // Table (newest first)
+  const head = `<tr><th>${grain === 'week' ? 'Week' : 'Month'}</th>${sources.map((s) => `<th>${esc(labels[s] || s)}</th>`).join('')}<th>Total</th></tr>`;
+  const body = [...rows].reverse().map((r) => `<tr><td>${esc(periodLabel(r.start, true))}</td>` +
+    sources.map((s) => `<td class="${r.counts[s] ? '' : 'zero'}">${fmt(r.counts[s])}</td>`).join('') +
+    `<td>${fmt(r.total)}</td></tr>`).join('');
+  const foot = `<tr class="totals"><td>Total</td>${sources.map((s) => `<td>${fmt(totals[s])}</td>`).join('')}<td>${fmt(grand)}</td></tr>`;
+  document.getElementById('table').innerHTML = head + body + foot;
+}
+
+document.querySelectorAll('#grain button').forEach((b) => b.addEventListener('click', () => {
+  grain = b.dataset.g;
+  document.querySelectorAll('#grain button').forEach((x) => x.classList.toggle('on', x === b));
+  render();
+}));
+document.getElementById('f-start').addEventListener('change', render);
+document.getElementById('f-end').addEventListener('change', render);
+document.querySelectorAll('.preset').forEach((el) => el.addEventListener('click', () => {
+  setRange(el.dataset.days === 'all' ? 'all' : parseInt(el.dataset.days, 10));
+}));
+</script>
+</body>
+</html>

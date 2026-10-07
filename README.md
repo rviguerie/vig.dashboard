@@ -56,7 +56,8 @@ See `.env.example`. Required ones:
 
 | Var | Source |
 |---|---|
-| `STRIPE_KEY` | Stripe dashboard → Developers → API keys → Create restricted key (Read for Charges, Customers, Invoices, Subscriptions) |
+| `STRIPE_KEY` | Main Stripe account. Stripe dashboard → Developers → API keys → Create restricted key (Read for Charges, Customers, Invoices, Subscriptions, Products) |
+| `STRIPE_THRIVECART_KEY` | ThriveCart's Stripe account, same steps (Read for Subscriptions, Customers; Products optional). Used by the members page. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase console → Project settings → Service accounts → Generate new private key. Paste the entire JSON as a single-line string. |
 | `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID` | Firebase console → Project settings → "Your apps" → Web app config |
 | `ALLOWED_EMAILS` | Comma-separated list of Google email addresses allowed to sign in |
@@ -122,6 +123,30 @@ node -r dotenv/config backend/seed.js  dotenv_config_path=.env.production
 - **Add/remove allowed user:** update `ALLOWED_EMAILS` env var in Railway, redeploy (or restart)
 - **Force key rotation:** generate new restricted key in Stripe → update `STRIPE_KEY` in Railway → restart service
 
+## Where members come from (`/members`)
+
+New Atomic Homework members per source, by week or month. Linked from the top of the dashboard.
+
+| Source | How it's decided |
+|---|---|
+| ThriveCart upsell (dictionary ad) | Every subscriber in the ThriveCart Stripe account |
+| Store / Upsell emails / Daily emails | Main account subscription created through a tagged checkout link (`metadata.source` on the subscription) |
+| Upsell emails (past) | Untagged main-account member who bought the Atomic Word Dictionary on or before joining |
+| Store or daily email (untagged) | Every other main-account member |
+
+Main-account members come from Atomic Homework subscriptions plus the first paid Atomic Homework charge in the `charges` ledger (so Kartra-era members are included). PayPal is left out. Each person counts once per account, on the date they first joined. Subscriptions sync hourly into the `atomic_subs` Firestore collection.
+
+### Tagged checkout links (one time)
+
+Create a restricted key in the main Stripe account with **Payment Links: Write, Products: Read, Prices: Read**. Use it only for this command — don't store it in Railway:
+
+```bash
+STRIPE_WRITE_KEY=rk_live_... npm run make-links                    # every active Atomic Homework price
+STRIPE_WRITE_KEY=rk_live_... npm run make-links -- price_abc price_def   # or just these prices
+```
+
+It prints one link per source per price. Put the `store` link on the store page, `upsell_email` in the upsell emails and `daily_email` in the daily emails. Re-running reuses existing links. Delete the write key in Stripe afterwards.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -146,10 +171,13 @@ app/
 │   ├── cache.js           # In-memory charge cache
 │   ├── stripe-refresh.js  # Incremental Stripe API pull → Firestore
 │   ├── cron.js            # node-cron hourly schedule
+│   ├── members.js         # Member sources: subscription sync (2 accounts) + source rules
+│   ├── make-source-links.js # One-shot: create tagged checkout links
 │   └── seed.js            # One-shot CSV → Firestore bulk load
 ├── public/
 │   ├── login.html         # Google sign-in
-│   └── dashboard.html     # The dashboard (calls /api/charges)
+│   ├── dashboard.html     # The dashboard (calls /api/charges)
+│   └── members.html       # Where members come from (calls /api/members)
 ├── package.json
 ├── railway.json
 ├── .env.example

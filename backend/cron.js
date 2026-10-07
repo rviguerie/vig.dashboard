@@ -8,6 +8,7 @@
 import cron from 'node-cron';
 import { refreshFromStripe } from './stripe-refresh.js';
 import { refreshPayPal } from './paypal-refresh.js';
+import { syncMembers } from './members.js';
 
 const DEFAULT_SCHEDULE = '0 * * * *'; // top of every hour
 
@@ -31,6 +32,11 @@ export function startCron() {
       } catch (err) {
         console.error('[cron] PayPal refresh failed:', err);
       }
+    }
+    try {
+      await syncMembers();
+    } catch (err) {
+      console.error('[cron] member sync failed:', err);
     }
   });
 
