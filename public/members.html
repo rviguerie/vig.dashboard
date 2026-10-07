@@ -148,6 +148,13 @@ tr.totals td{font-weight:600;border-top:1px solid #2d3148}
     <div class="table-wrap"><table id="table"></table></div>
     <div class="note" id="method-note"></div>
   </div>
+
+  <div class="section">
+    <div class="section-title">Atomic Word Dictionary buyers → Atomic Homework members</div>
+    <div class="metric-grid" id="dict-tiles"></div>
+    <div class="table-wrap" style="margin-top:1rem"><table id="dict-table"></table></div>
+    <div class="note" id="dict-note"></div>
+  </div>
 </div>
 
 <div id="empty" class="empty" style="display:none">No members found yet.</div>
@@ -175,6 +182,7 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 let firebaseAuth = null;
 let members = [];      // [{ date: Date, source }]
+let dictBuyers = [];   // [{ bought: Date, joined?: Date, source?, already? }]
 let labels = {};
 let grain = 'week';
 let minDate = null, maxDate = null;
@@ -220,6 +228,7 @@ async function load() {
     }
     labels = data.sources || {};
     members = (data.members || []).map((m) => ({ date: new Date(m.date * 1000), source: m.source, via: m.via }));
+    dictBuyers = (data.dictionary || []).map((d) => ({ ...d, bought: new Date(d.bought * 1000), joined: d.joined ? new Date(d.joined * 1000) : null }));
     showStatus(data);
     showWarnings(data);
     if (!members.length) {
@@ -395,6 +404,7 @@ function render() {
     `<td>${fmt(r.total)}</td></tr>`).join('');
   const foot = `<tr class="totals"><td>Total</td>${sources.map((s) => `<td>${fmt(totals[s])}</td>`).join('')}<td>${fmt(grand)}</td></tr>`;
   document.getElementById('table').innerHTML = head + body + foot;
+  renderDictionary(start, end);
 }
 
 document.querySelectorAll('#grain button').forEach((b) => b.addEventListener('click', () => {
@@ -407,6 +417,48 @@ document.querySelectorAll('.preset').forEach((el) => el.addEventListener('click'
   const d = el.dataset.days;
   setRange(['all', 'today', 'yesterday'].includes(d) ? d : parseInt(d, 10));
 }));
+
+// ─── Dictionary buyers → Atomic Homework ─────────────────────────────
+const HOUR = 3600000;
+const BUCKETS = [
+  ['Within 1 hour', 0, HOUR],
+  ['1 hour – 1 day', HOUR, DAY],
+  ['1 – 7 days', DAY, 7 * DAY],
+  ['7 – 30 days', 7 * DAY, 30 * DAY],
+  ['Over 30 days', 30 * DAY, Infinity],
+];
+function fmtGap(ms) {
+  if (ms < HOUR) return Math.max(1, Math.round(ms / 60000)) + ' min';
+  if (ms < 2 * DAY) return Math.round(ms / HOUR) + ' hours';
+  return Math.round(ms / DAY) + ' days';
+}
+function renderDictionary(start, end) {
+  const inWin = dictBuyers.filter((d) => d.bought >= start && d.bought <= end);
+  const conv = inWin.filter((d) => d.joined).map((d) => ({ ...d, gap: d.joined - d.bought }));
+  const already = inWin.filter((d) => d.already).length;
+  const base = inWin.length - already;
+  const gaps = conv.map((c) => c.gap).sort((a, b) => a - b);
+  const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
+  const pct = (n, d) => (d ? Math.round(100 * n / d) : 0) + '%';
+  document.getElementById('dict-tiles').innerHTML =
+    `<div class="metric"><div class="metric-label">Bought the dictionary</div><div class="metric-value">${fmt(inWin.length)}</div><div class="metric-sub">first dictionary purchase in window</div></div>` +
+    `<div class="metric"><div class="metric-label">Became paying members</div><div class="metric-value">${fmt(conv.length)}</div><div class="metric-sub">${pct(conv.length, base)} of buyers who weren't members yet</div></div>` +
+    `<div class="metric"><div class="metric-label">Typical time to join</div><div class="metric-value">${median == null ? '—' : esc(fmtGap(median))}</div><div class="metric-sub">half joined faster than this</div></div>` +
+    `<div class="metric"><div class="metric-label">Already members</div><div class="metric-value">${fmt(already)}</div><div class="metric-sub">joined before buying the dictionary</div></div>`;
+  const srcs = ORDER.filter((s) => conv.some((c) => c.source === s));
+  const head = `<tr><th>Time from dictionary to first payment</th>${srcs.map((s) => `<th>${esc(labels[s] || s)}</th>`).join('')}<th>Total</th><th>% of joiners</th></tr>`;
+  const body = BUCKETS.map(([label, lo, hi]) => {
+    const inB = conv.filter((c) => c.gap >= lo && c.gap < hi);
+    return `<tr><td>${label}</td>${srcs.map((s) => { const n = inB.filter((c) => c.source === s).length; return `<td class="${n ? '' : 'zero'}">${fmt(n)}</td>`; }).join('')}` +
+      `<td>${fmt(inB.length)}</td><td>${pct(inB.length, conv.length)}</td></tr>`;
+  }).join('');
+  const foot = `<tr class="totals"><td>Total</td>${srcs.map((s) => `<td>${fmt(conv.filter((c) => c.source === s).length)}</td>`).join('')}<td>${fmt(conv.length)}</td><td>${conv.length ? '100%' : '0%'}</td></tr>`;
+  document.getElementById('dict-table').innerHTML = conv.length ? head + body + foot : '';
+  const recent = inWin.filter((d) => d.bought > new Date(Date.now() - 7 * DAY)).length;
+  document.getElementById('dict-note').textContent =
+    'Buyers are matched by email across Kartra, Stripe, ThriveCart and PayPal. "Became paying members" counts anyone who later paid for Atomic Homework, whenever that was. ' +
+    (recent ? `${fmt(recent)} of these buyers bought in the last 7 days and have had little time to join yet.` : '');
+}
 
 // ─── Tagged checkout links ───────────────────────────────────────────
 const LINK_LABELS = { store: 'Store', upsell_email: 'Upsell emails', daily_email: 'Daily emails' };

@@ -299,7 +299,15 @@ export function buildMembers() {
       if (awd) joinAwd.add(id); else joinAwd.delete(id);
     }
   }
-  for (const date of tcJoin.values()) members.push({ date, account: 'thrivecart', source: 'dictionary_ad_upsell', via: 'stripe' });
+  const joinedAs = new Map();   // ident → { date, source } of their earliest membership (either account)
+  const noteJoin = (id, date, source) => {
+    const cur = joinedAs.get(id);
+    if (!cur || date < cur.date) joinedAs.set(id, { date, source });
+  };
+  for (const [id, date] of tcJoin) {
+    members.push({ date, account: 'thrivecart', source: 'dictionary_ad_upsell', via: 'stripe' });
+    noteJoin(id, date, 'dictionary_ad_upsell');
+  }
   for (const s of subs) {
     if (s.account !== 'main') continue;
     const id = identOf(s.customer_email, s.customer_id);
@@ -331,11 +339,26 @@ export function buildMembers() {
     else source = 'store_or_daily';
     if (via === 'paypal') paypal++;
     members.push({ date, account: 'main', source, via });
+    noteJoin(id, date, source);
   }
 
   members.sort((a, b) => a.date - b.date);
+
+  // Dictionary buyers → Atomic Homework: one row per dictionary buyer, dated by
+  // their first dictionary purchase. `joined`/`source` are set when they became
+  // a paying member after it; `already` when they were a member before.
+  const dictionary = [];
+  for (const [id, times] of dictBuys) {
+    const bought = Math.min(...times);
+    const j = joinedAs.get(id);
+    if (!j) dictionary.push({ bought });
+    else if (j.date >= bought - 300) dictionary.push({ bought, joined: j.date, source: j.source });
+    else dictionary.push({ bought, already: true });
+  }
+  dictionary.sort((a, b) => a.bought - b.bought);
   return {
     members,
+    dictionary,
     stats: {
       thrivecartSubs: subs.filter((s) => s.account === 'thrivecart').length,
       mainSubs: subs.filter((s) => s.account === 'main').length,
