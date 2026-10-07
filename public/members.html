@@ -255,7 +255,7 @@ function showWarnings(data) {
     'How sources are worked out: ThriveCart account members are all counted as the dictionary-ad upsell. ' +
     'In the main account, a member who joined through one of the tagged checkout links gets that link\'s source. ' +
     'Everyone else who bought the Atomic Word Dictionary before joining counts as the dictionary-ad upsell if they joined within 1 hour of buying it, and as "Upsell emails" if later. The rest are "Store or daily email". ' +
-    'PayPal buyers are included and sorted by the same rules (PayPal can\'t carry a link tag). Each person counts once per account, on the date they first joined. ' +
+    'PayPal buyers are included and sorted by the same rules (PayPal can\'t carry a link tag); from 7 Oct 2026, a PayPal buyer paying €49 counts as "Store" and one paying €39 without a dictionary purchase counts as "Daily emails".Each person counts once per account, on the date they first joined. ' +
     `<br>Found: ${fmt(s.dictionaryBuyers || 0)} dictionary buyers · ${fmt(s.taggedMembers || 0)} members from tagged links · ${fmt(s.paypalMembers || 0)} members who first paid with PayPal · ` +
     `${fmt(s.mainSubs || 0)} main-account subscriptions · ${fmt(s.thrivecartSubs || 0)} ThriveCart subscriptions.`;
 }
