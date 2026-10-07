@@ -135,10 +135,13 @@ function mapSubscription(account, s, names) {
   const productIds = subProductIds(s);
   const productName = names ? productIds.map((id) => names.get(id) || '').find(Boolean) || '' : '';
   const tag = (s.metadata?.source || '').trim().toLowerCase();
+  // "AWD Upsell" is the name of the €39 price used for the dictionary one-click upsell
+  // (it sits on an Atomic Homework product), so check the price name as well as the product name.
   const awd = (s.items?.data || []).some((it) => {
     const p = it.price?.product ?? it.plan?.product;
-    const name = names?.get(typeof p === 'object' && p ? p.id : p) || it.price?.nickname || it.plan?.nickname || '';
-    return isAwdUpsell(name, (it.price?.unit_amount ?? it.plan?.amount ?? 0) / 100);
+    const amount = (it.price?.unit_amount ?? it.plan?.amount ?? 0) / 100;
+    return [names?.get(typeof p === 'object' && p ? p.id : p), it.price?.nickname, it.plan?.nickname]
+      .some((n) => isAwdUpsell(n, amount));
   });
   // Tagged checkout links are only made for Atomic Homework, so a tag counts even if the product is named differently.
   if (ACCOUNTS[account].atomicOnly && !TAGGABLE.has(tag) && !awd && !subNames(s, names).some(isAtomicHomework)) return null;
