@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Mr. Vig LLC — Where members come from</title>
+<title>Mr. Vig LLC — Where Atomic Homework members come from</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--s-store:#3987e5;--s-upsell_email:#d95926;--s-daily_email:#199e70;--s-store_or_daily:#c98500;--s-dictionary_ad_upsell:#d55181}
@@ -86,7 +86,7 @@ tr.totals td{font-weight:600;border-top:1px solid #2d3148}
 </style>
 </head>
 <body>
-<h1>Where members come from</h1>
+<h1>Where Atomic Homework members come from</h1>
 <p class="subtitle">New Atomic Homework members per source · main Stripe account + ThriveCart Stripe account</p>
 
 <div class="toast" id="toast"></div>
@@ -110,6 +110,7 @@ tr.totals td{font-weight:600;border-top:1px solid #2d3148}
     <div class="filter-group">
       <label>Group by</label>
       <div class="seg" id="grain">
+        <button data-g="day">Day</button>
         <button data-g="week" class="on">Week</button>
         <button data-g="month">Month</button>
       </div>
@@ -117,6 +118,10 @@ tr.totals td{font-weight:600;border-top:1px solid #2d3148}
     <div class="filter-group"><label>From</label><input type="date" id="f-start"></div>
     <div class="filter-group"><label>To</label><input type="date" id="f-end"></div>
     <div class="filter-group">
+      <span class="preset" data-days="today">Today</span>
+      <span class="preset" data-days="yesterday">Yesterday</span>
+      <span class="preset" data-days="7">Last 7 days</span>
+      <span class="preset" data-days="30">Last 30 days</span>
       <span class="preset" data-days="84">Last 12 weeks</span>
       <span class="preset" data-days="182">Last 6 months</span>
       <span class="preset" data-days="365">Last 12 months</span>
@@ -162,6 +167,7 @@ const ORDER = ['store', 'upsell_email', 'daily_email', 'store_or_daily', 'dictio
 const color = (s) => `var(--s-${s}, #8b8f9c)`;
 const DAY = 86400000;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 const ymd = (d) => d.toISOString().slice(0, 10);
@@ -283,24 +289,38 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
 // ─── Periods (UTC; weeks start Monday) ───────────────────────────────
 function periodStart(d) {
   const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  if (grain === 'day') return x;
   if (grain === 'month') { x.setUTCDate(1); return x; }
   const dow = (x.getUTCDay() + 6) % 7; // Mon=0
   return new Date(x.getTime() - dow * DAY);
 }
 function nextPeriod(d) {
   const x = new Date(d);
-  if (grain === 'month') x.setUTCMonth(x.getUTCMonth() + 1); else x.setUTCDate(x.getUTCDate() + 7);
+  if (grain === 'month') x.setUTCMonth(x.getUTCMonth() + 1);
+  else x.setUTCDate(x.getUTCDate() + (grain === 'day' ? 1 : 7));
   return x;
 }
 function periodLabel(d, long) {
   const m = MONTHS[d.getUTCMonth()];
   if (grain === 'month') return long ? `${m} ${d.getUTCFullYear()}` : `${m} '${String(d.getUTCFullYear()).slice(2)}`;
+  if (grain === 'day') return long ? `${WEEKDAYS[d.getUTCDay()]}, ${m} ${d.getUTCDate()}, ${d.getUTCFullYear()}` : `${m} ${d.getUTCDate()}`;
   return long ? `Week of ${m} ${d.getUTCDate()}, ${d.getUTCFullYear()}` : `${m} ${d.getUTCDate()}`;
 }
 
+function setGrain(g) {
+  grain = g;
+  document.querySelectorAll('#grain button').forEach((x) => x.classList.toggle('on', x.dataset.g === g));
+}
+
 function setRange(days) {
-  const end = maxDate;
-  const start = days === 'all' ? minDate : new Date(end.getTime() - days * DAY);
+  const today = new Date();
+  let start, end = maxDate;
+  if (days === 'today') { start = end = today; setGrain('day'); }
+  else if (days === 'yesterday') { start = end = new Date(today.getTime() - DAY); setGrain('day'); }
+  else if (days === 'all') start = minDate;
+  else if (days === 7 || days === 30) { end = today; start = new Date(today.getTime() - (days - 1) * DAY); setGrain('day'); }
+  else start = new Date(end.getTime() - days * DAY);
+  if (grain === 'day' && typeof days === 'number' && days > 31) setGrain('week'); // a bar per day is too many
   document.getElementById('f-start').value = ymd(start);
   document.getElementById('f-end').value = ymd(end);
   render();
@@ -336,7 +356,7 @@ function render() {
       `<div class="metric-value">${fmt(totals[s])}</div><div class="metric-sub">${grand ? Math.round(100 * totals[s] / grand) : 0}% of new members</div></div>`).join('');
 
   // Chart
-  const unit = grain === 'week' ? 'week' : 'month';
+  const unit = grain;
   document.getElementById('chart-title').textContent = `New members per ${unit}`;
   document.getElementById('table-title').textContent = `New members per ${unit} · table`;
   document.getElementById('legend').innerHTML = sources.map((s) => `<span><span class="sw" style="background:${color(s)}"></span>${esc(labels[s] || s)}</span>`).join('');
@@ -369,7 +389,7 @@ function render() {
   });
 
   // Table (newest first)
-  const head = `<tr><th>${grain === 'week' ? 'Week' : 'Month'}</th>${sources.map((s) => `<th>${esc(labels[s] || s)}</th>`).join('')}<th>Total</th></tr>`;
+  const head = `<tr><th>${grain === 'day' ? 'Day' : grain === 'week' ? 'Week' : 'Month'}</th>${sources.map((s) => `<th>${esc(labels[s] || s)}</th>`).join('')}<th>Total</th></tr>`;
   const body = [...rows].reverse().map((r) => `<tr><td>${esc(periodLabel(r.start, true))}</td>` +
     sources.map((s) => `<td class="${r.counts[s] ? '' : 'zero'}">${fmt(r.counts[s])}</td>`).join('') +
     `<td>${fmt(r.total)}</td></tr>`).join('');
@@ -378,14 +398,14 @@ function render() {
 }
 
 document.querySelectorAll('#grain button').forEach((b) => b.addEventListener('click', () => {
-  grain = b.dataset.g;
-  document.querySelectorAll('#grain button').forEach((x) => x.classList.toggle('on', x === b));
+  setGrain(b.dataset.g);
   render();
 }));
 document.getElementById('f-start').addEventListener('change', render);
 document.getElementById('f-end').addEventListener('change', render);
 document.querySelectorAll('.preset').forEach((el) => el.addEventListener('click', () => {
-  setRange(el.dataset.days === 'all' ? 'all' : parseInt(el.dataset.days, 10));
+  const d = el.dataset.days;
+  setRange(['all', 'today', 'yesterday'].includes(d) ? d : parseInt(d, 10));
 }));
 
 // ─── Tagged checkout links ───────────────────────────────────────────

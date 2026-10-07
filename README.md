@@ -123,7 +123,7 @@ node -r dotenv/config backend/seed.js  dotenv_config_path=.env.production
 - **Add/remove allowed user:** update `ALLOWED_EMAILS` env var in Railway, redeploy (or restart)
 - **Force key rotation:** generate new restricted key in Stripe → update `STRIPE_KEY` in Railway → restart service
 
-## Where members come from (`/members`)
+## Where Atomic Homework members come from (`/members`)
 
 New Atomic Homework members per source, by week or month. Linked from the top of the dashboard.
 
@@ -177,7 +177,7 @@ app/
 ├── public/
 │   ├── login.html         # Google sign-in
 │   ├── dashboard.html     # The dashboard (calls /api/charges)
-│   └── members.html       # Where members come from (calls /api/members)
+│   └── members.html       # Where Atomic Homework members come from (calls /api/members)
 ├── package.json
 ├── railway.json
 ├── .env.example
