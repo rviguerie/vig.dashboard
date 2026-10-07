@@ -38,18 +38,20 @@ const FIRESTORE_BATCH = 500;
 const MAX_PAGES = 1000;
 const TAG_MATCH_WINDOW = 2 * 86400; // a tagged sub counts if it started within 2 days of the join date
 const UPSELL_PAGE_WINDOW = 3600;     // joined ≤1h after buying the dictionary = one-click upsell page
-// PayPal can't carry a link tag, so new PayPal members are sorted by price:
-// €49 is only sold on the store; €39 without a prior dictionary purchase is
-// the daily emails. Applies to PayPal members who joined from this date on.
-const PAYPAL_PRICE_RULE_FROM = Date.UTC(2026, 9, 7) / 1000; // 7 Oct 2026
+// Untagged members are sorted by the price of their first payment. Prices have
+// been stable: €49 only on the store, €39 in the emails, and €29 only in the
+// launch promotion email about a year ago.
 const STORE_PRICE = 49;
 const EMAIL_PRICE = 39;
+const LAUNCH_PROMO_PRICE = 29;
+const priceIs = (amount, p) => amount != null && Math.abs(amount - p) < 0.01;
 
 export const SOURCES = {
   store: 'Store',
   upsell_email: 'Upsell emails',
   daily_email: 'Daily emails',
-  store_or_daily: 'Store or daily email (untagged)',
+  launch_promo: 'Launch promotion email (€29)',
+  store_or_daily: 'Store or daily email (unknown)',
   dictionary_ad_upsell: 'Dictionary ad upsell (one-click)',
 };
 const TAGGABLE = new Set(['store', 'upsell_email', 'daily_email']);
@@ -131,6 +133,13 @@ function subNames(s, names) {
   ].filter(Boolean);
 }
 
+/** Price of the subscription's first item in euros (null if unknown). */
+function firstItemAmount(s) {
+  const it = s.items?.data?.[0];
+  const cents = it?.price?.unit_amount ?? it?.plan?.amount;
+  return cents == null ? null : cents / 100;
+}
+
 function mapSubscription(account, s, names) {
   const productIds = subProductIds(s);
   const productName = names ? productIds.map((id) => names.get(id) || '').find(Boolean) || '' : '';
@@ -165,6 +174,7 @@ function mapSubscription(account, s, names) {
     product_name: productName,
     source_tag: tag,
     awd_upsell: awd,
+    amount: firstItemAmount(s),
   };
 }
 
@@ -305,7 +315,7 @@ export function buildMembers() {
     if (!join.has(id) || s.start < join.get(id)) {
       join.set(id, s.start);
       joinVia.set(id, 'stripe');
-      joinAmount.delete(id);
+      if (s.amount != null) joinAmount.set(id, s.amount); else joinAmount.delete(id);
       if (s.awd_upsell) joinAwd.add(id); else joinAwd.delete(id);
     }
   }
@@ -318,16 +328,16 @@ export function buildMembers() {
       .sort((a, b) => a.start - b.start)[0];
     const via = joinVia.get(id) || 'stripe';
     const amount = joinAmount.get(id);
-    const byPrice = via === 'paypal' && date >= PAYPAL_PRICE_RULE_FROM;
+    const lastDict = Math.max(-Infinity, ...(dictBuys.get(id) || []).filter((t) => t <= date));
     let source;
     if (tagSub) { source = tagSub.source_tag; tagged++; }
     else if (joinAwd.has(id)) source = 'dictionary_ad_upsell';
-    else if (byPrice && Math.abs(amount - STORE_PRICE) < 0.01) source = 'store';
-    else {
-      const lastDict = Math.max(-Infinity, ...(dictBuys.get(id) || []).filter((t) => t <= date));
-      if (isFinite(lastDict)) source = date - lastDict <= UPSELL_PAGE_WINDOW ? 'dictionary_ad_upsell' : 'upsell_email';
-      else source = byPrice && Math.abs(amount - EMAIL_PRICE) < 0.01 ? 'daily_email' : 'store_or_daily';
-    }
+    else if (isFinite(lastDict) && date - lastDict <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
+    else if (priceIs(amount, STORE_PRICE)) source = 'store';
+    else if (priceIs(amount, LAUNCH_PROMO_PRICE)) source = 'launch_promo';
+    else if (isFinite(lastDict)) source = 'upsell_email';
+    else if (priceIs(amount, EMAIL_PRICE)) source = 'daily_email';
+    else source = 'store_or_daily';
     if (via === 'paypal') paypal++;
     members.push({ date, account: 'main', source, via });
   }
