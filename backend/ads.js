@@ -26,7 +26,7 @@
  */
 
 const CAMPAIGN = 'Atomic Homework September 2026';
-const AD_ACCOUNT = 'act_796462494198580';
+export const AD_ACCOUNT = 'act_796462494198580';
 const META_BASE = 'https://graph.facebook.com';
 const STRIPE_BASE = 'https://api.stripe.com/v1';
 // Pinned so invoice.charge / charge.invoice exist whatever the account default is.
@@ -63,12 +63,14 @@ const EE_DIRECT_ADSET = 'E_EUROPE_COLD_AMAZING_Full-Price';
 const EE_TRIAL_ADSET = 'Test B - E_EUROPE_COLD_AMAZING - Free Trial';
 const sameName = (a, b) => (a || '').trim().toLowerCase() === b.toLowerCase();
 
+import { buildDictionarySection } from './ads-dictionary.js';
+
 const cache = new Map(); // "since|until" → { at, data }
 
 // ─── Time zone helpers ───────────────────────────────────────────────
 
 /** Unix seconds for 00:00 on `ymd` in time zone `tz`. */
-function zonedMidnight(ymd, tz) {
+export function zonedMidnight(ymd, tz) {
   const [y, m, d] = ymd.split('-').map(Number);
   const guess = Date.UTC(y, m - 1, d);
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
@@ -81,7 +83,7 @@ function zonedMidnight(ymd, tz) {
 
 // ─── API helpers ─────────────────────────────────────────────────────
 
-async function metaGet(path, params) {
+export async function metaGet(path, params) {
   const token = process.env.META_ACCESS_TOKEN;
   const version = process.env.META_API_VERSION || 'v23.0';
   const q = new URLSearchParams(params);
@@ -92,8 +94,7 @@ async function metaGet(path, params) {
   return body;
 }
 
-async function stripeGet(pathAndQuery) {
-  const key = process.env.STRIPE_KEY;
+export async function stripeGet(pathAndQuery, key = process.env.STRIPE_KEY) {
   if (!key) throw new Error('STRIPE_KEY env var is not set.');
   const res = await fetch(`${STRIPE_BASE}${pathAndQuery}`, {
     headers: { Authorization: 'Bearer ' + key, 'Stripe-Version': STRIPE_VERSION },
@@ -105,14 +106,14 @@ async function stripeGet(pathAndQuery) {
   return res.json();
 }
 
-async function stripeList(path, params) {
+export async function stripeList(path, params, key = process.env.STRIPE_KEY) {
   const out = [];
   let startingAfter = null;
   for (let pages = 0; pages < MAX_PAGES; pages++) {
     const q = new URLSearchParams(params);
     q.set('limit', '100');
     if (startingAfter) q.set('starting_after', startingAfter);
-    const data = await stripeGet(`${path}?${q.toString()}`);
+    const data = await stripeGet(`${path}?${q.toString()}`, key);
     const page = data?.data || [];
     out.push(...page);
     if (!data.has_more || !page.length) break;
@@ -122,7 +123,7 @@ async function stripeList(path, params) {
 }
 
 /** Run `fn` over `items`, `n` at a time. */
-async function pool(items, n, fn) {
+export async function pool(items, n, fn) {
   const out = new Array(items.length);
   let i = 0;
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
@@ -131,17 +132,17 @@ async function pool(items, n, fn) {
   return out;
 }
 
-const cardCountry = (pm) => (pm && typeof pm === 'object' ? pm.card?.country : '') || '';
+export const cardCountry = (pm) => (pm && typeof pm === 'object' ? pm.card?.country : '') || '';
 
 // ─── Meta ────────────────────────────────────────────────────────────
 
-async function metaAccount() {
+export async function metaAccount() {
   return metaGet(AD_ACCOUNT, { fields: 'name,currency,timezone_name' });
 }
 
 // Meta reports a purchase under several action types; take the first that's present.
 const PURCHASE_TYPES = ['purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase'];
-function purchases(actions) {
+export function purchases(actions) {
   for (const t of PURCHASE_TYPES) {
     const a = (actions || []).find((x) => x.action_type === t);
     if (a) return Number(a.value) || 0;
@@ -149,16 +150,10 @@ function purchases(actions) {
   return 0;
 }
 
-async function metaAdsets(since, until) {
-  const params = {
-    level: 'adset',
-    fields: 'campaign_name,adset_id,adset_name,spend,actions',
-    time_range: JSON.stringify({ since, until }),
-    filtering: JSON.stringify([{ field: 'campaign.name', operator: 'EQUAL', value: CAMPAIGN }]),
-    limit: '500',
-  };
+/** Follow Meta's `paging.next` links and collect every row. */
+export async function metaAll(path, params) {
   const rows = [];
-  let body = await metaGet(`${AD_ACCOUNT}/insights`, params);
+  let body = await metaGet(path, params);
   for (let pages = 0; pages < 20; pages++) {
     rows.push(...(body.data || []));
     const next = body.paging?.next;
@@ -167,32 +162,45 @@ async function metaAdsets(since, until) {
     body = await res.json();
     if (body.error) throw new Error(`Meta: ${body.error.message}`);
   }
-  return rows
-    .filter((r) => r.campaign_name === CAMPAIGN)
-    .map((r) => ({
-      id: r.adset_id,
-      name: r.adset_name,
-      region: adsetRegion(r.adset_name),
-      spend: Number(r.spend) || 0,
-      metaPurchases: purchases(r.actions),
-    }));
+  return rows;
+}
+
+/** Spend and Meta purchases per ad set of `campaign` for the dates. */
+export async function metaInsights(since, until, campaign) {
+  const rows = await metaAll(`${AD_ACCOUNT}/insights`, {
+    level: 'adset',
+    fields: 'campaign_name,adset_id,adset_name,spend,actions',
+    time_range: JSON.stringify({ since, until }),
+    filtering: JSON.stringify([{ field: 'campaign.name', operator: 'EQUAL', value: campaign }]),
+    limit: '500',
+  });
+  return rows.filter((r) => r.campaign_name === campaign).map((r) => ({
+    id: r.adset_id,
+    name: r.adset_name,
+    spend: Number(r.spend) || 0,
+    metaPurchases: purchases(r.actions),
+  }));
+}
+
+async function metaAdsets(since, until) {
+  return (await metaInsights(since, until, CAMPAIGN)).map((a) => ({ ...a, region: adsetRegion(a.name) }));
 }
 
 // ─── Stripe ──────────────────────────────────────────────────────────
 
-const identOf = (email, customerId) => (email || '').toLowerCase() || customerId || '';
+export const identOf = (email, customerId) => (email || '').toLowerCase() || customerId || '';
 
 /** Completed checkouts of one payment link started in [from, to). */
-async function linkCheckouts(link, from, to, expand) {
+export async function linkCheckouts(link, from, to, expand, key = process.env.STRIPE_KEY) {
   const raw = await stripeList('/checkout/sessions', [
     ['payment_link', link], ['status', 'complete'],
     ['created[gte]', String(from)], ['created[lt]', String(to)],
     ...expand.map((e) => ['expand[]', e]),
-  ]);
+  ], key);
   return raw.sort((a, b) => a.created - b.created);
 }
 
-const sessionIdent = (cs) => {
+export const sessionIdent = (cs) => {
   const cust = typeof cs.customer === 'object' && cs.customer ? cs.customer : null;
   return identOf(cs.customer_details?.email || cust?.email, cust?.id || cs.customer || '');
 };
@@ -233,25 +241,36 @@ async function stripeTrials(from, to) {
     if (id) seen.add(id);
     subs.push({ cs, s });
   }
-  const now = Date.now() / 1000;
   return pool(subs, 5, async ({ cs, s }) => {
-    const cust = typeof cs.customer === 'object' && cs.customer ? cs.customer : null;
-    let country = cardCountry(s.default_payment_method) || cardCountry(cust?.invoice_settings?.default_payment_method);
-    let state = 'unpaid';
-    if (s.status === 'trialing' && s.trial_end && s.trial_end > now) state = 'in_trial';
-    else {
-      const invoices = await stripeList('/invoices', [['subscription', s.id], ['expand[]', 'data.charge']]);
-      const first = invoices.filter((i) => (i.total || 0) >= PRICE_CENTS).sort((a, b) => a.created - b.created)[0];
-      if (!first) state = s.status === 'trialing' ? 'in_trial' : 'unpaid';
-      else if (first.status === 'paid' && (first.amount_paid || 0) >= PRICE_CENTS) state = 'paid';
-      else if (first.status === 'open' || first.status === 'draft') state = 'pending';
-      if (!country && first?.charge && typeof first.charge === 'object') {
-        country = first.charge.payment_method_details?.card?.country || '';
-      }
-    }
-    if (!country) country = cs.customer_details?.address?.country || '';
+    const { country, state } = await trialOutcome(cs, s, PRICE_CENTS);
     return { region: regionOf(country), country, state };
   });
+}
+
+/**
+ * What happened after a free trial: state is 'in_trial', 'paid' (first
+ * invoice of at least `minCents` was paid), 'pending' (that invoice is still
+ * open) or 'unpaid'. Also returns the card country and every amount paid so far.
+ */
+export async function trialOutcome(cs, s, minCents, key = process.env.STRIPE_KEY) {
+  const cust = typeof cs.customer === 'object' && cs.customer ? cs.customer : null;
+  let country = cardCountry(s.default_payment_method) || cardCountry(cust?.invoice_settings?.default_payment_method);
+  let state = 'unpaid';
+  let paidCents = 0;
+  if (s.status === 'trialing' && s.trial_end && s.trial_end > Date.now() / 1000) state = 'in_trial';
+  else {
+    const invoices = await stripeList('/invoices', [['subscription', s.id], ['expand[]', 'data.charge']], key);
+    const first = invoices.filter((i) => (i.total || 0) >= minCents).sort((a, b) => a.created - b.created)[0];
+    if (!first) state = s.status === 'trialing' ? 'in_trial' : 'unpaid';
+    else if (first.status === 'paid' && (first.amount_paid || 0) >= minCents) state = 'paid';
+    else if (first.status === 'open' || first.status === 'draft') state = 'pending';
+    if (!country && first?.charge && typeof first.charge === 'object') {
+      country = first.charge.payment_method_details?.card?.country || '';
+    }
+    paidCents = invoices.filter((i) => i.status === 'paid').reduce((t, i) => t + (i.amount_paid || 0), 0);
+  }
+  if (!country) country = cs.customer_details?.address?.country || '';
+  return { country, state, paidCents };
 }
 
 // ─── Report ──────────────────────────────────────────────────────────
@@ -286,8 +305,16 @@ export async function buildAdsReport(since, until) {
 
   let sales = [];
   let trials = [];
+  let dictionary = null;
   try {
-    [sales, trials] = await Promise.all([stripeSales(from, to), stripeTrials(from, to)]);
+    [sales, trials, dictionary] = await Promise.all([
+      stripeSales(from, to),
+      stripeTrials(from, to),
+      buildDictionarySection(since, until, from, to, hasMeta && !!account).catch((err) => {
+        console.error('[ads] dictionary section failed:', err);
+        return { error: err.message };
+      }),
+    ]);
   } catch (err) {
     if (/Stripe 403/.test(err.message)) throw new Error('The Stripe key cannot read checkouts. Add "Checkout Sessions: Read" to the restricted key (STRIPE_KEY). ' + err.message);
     throw err;
@@ -347,6 +374,7 @@ export async function buildAdsReport(since, until) {
     regions,
     regionOrder: Object.keys(REGIONS),
     links: { direct: DIRECT_LINK, trial: TRIAL_LINK },
+    dictionary,
     warnings,
     builtAt: new Date().toISOString(),
   };
