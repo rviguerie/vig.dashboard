@@ -387,7 +387,7 @@ function renderDictionary(d) {
     'Both Stripe accounts are checked. <strong>Dictionary order</strong>: a paid €7 charge, or €16 (dictionary + bump in one charge). ' +
     '<strong>Order bump</strong>: the €16 charge, or a €9 charge by the same customer within 2 hours of a €7 charge. ' +
     `<strong>Upsell trials</strong>: checkouts of ${esc(d.upsellLink)} (one per customer); <strong>Upsell paid</strong>: the first payment after the trial went through.<br>` +
-    'Sales go to an ad set by the card\'s country, using the countries each ad set targets in Meta. Ad sets targeting exactly the same countries are shown as one group. ' +
+    'Sales go to an ad set by the card\'s country, using the countries each ad set targets in Meta. Only ad sets with spend in the chosen dates are used; ad sets with no spend are left out. Ad sets targeting exactly the same countries are shown as one group. ' +
     '<strong>Cost per dictionary buyer</strong> = spend ÷ dictionary orders (the total leaves out untargeted countries). ' +
     '<strong>Revenue per buyer</strong> = (€7 dictionary + €9 bumps + upsell payments so far) ÷ dictionary orders.';
 }
