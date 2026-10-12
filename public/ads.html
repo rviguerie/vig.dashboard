@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Mr. Vig LLC — Ad results</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--s-store:#3987e5;--s-upsell_email:#d95926;--s-daily_email:#199e70;--s-store_or_daily:#c98500;--s-dictionary_ad_upsell:#d55181;--s-launch_promo:#9085e9}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e8e9ec;min-height:100vh;padding:2rem;max-width:1400px;margin:0 auto}
+@media(max-width:700px){body{padding:1rem}}
+h1{font-size:18px;font-weight:500;letter-spacing:-.3px;margin-bottom:.2rem}
+.subtitle{font-size:12px;color:#6b7280;margin-bottom:1.5rem}
+a{color:#8b95c9;text-decoration:none}
+a:hover{text-decoration:underline}
+.toast{position:fixed;top:1.5rem;right:1.5rem;background:#1a1d2e;border:1px solid #2d3148;border-radius:8px;padding:.75rem 1.25rem;font-size:13px;color:#e8e9ec;display:none;z-index:999;max-width:420px}
+.toast.show{display:block}
+.toast.error{border-color:#7f1d1d;color:#f87171}
+.status-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.7rem 1.1rem;margin-bottom:1rem;font-size:13px;flex-wrap:wrap}
+.status-bar .left,.status-bar .right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#34d399;margin-right:6px;vertical-align:middle}
+.status-dot.warn{background:#fb923c}
+.status-dot.bad{background:#f87171}
+.info{color:#9ca3af}
+.info strong{color:#e8e9ec}
+.user-pill{font-size:12px;color:#9ca3af;background:#1a1d2e;border:1px solid #2d3148;border-radius:6px;padding:5px 10px}
+.btn{font-size:12px;color:#9ca3af;border:1px solid #2d3148;border-radius:6px;padding:6px 12px;cursor:pointer;background:transparent;white-space:nowrap;font-family:inherit}
+.btn:hover{background:#1a1d2e;color:#e8e9ec}
+.btn.primary{color:#e8e9ec;background:#1a1d2e;border-color:#4a5080}
+.btn:disabled{opacity:.5;cursor:wait}
+.filter-bar{display:flex;flex-wrap:wrap;align-items:center;gap:14px;background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.85rem 1.1rem;margin-bottom:1.5rem}
+.filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.filter-bar label{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.filter-bar input[type=date]{font-size:13px;padding:5px 10px;border:1px solid #2d3148;border-radius:6px;background:#1a1d2e;color:#e8e9ec;font-family:inherit;color-scheme:dark}
+.seg{display:inline-flex;border:1px solid #2d3148;border-radius:6px;overflow:hidden}
+.seg button{font-size:12px;padding:5px 12px;background:transparent;color:#9ca3af;border:none;cursor:pointer;font-family:inherit}
+.seg button.on{background:#2d3148;color:#e8e9ec}
+.preset{font-size:11px;color:#9ca3af;cursor:pointer;padding:4px 8px;border-radius:4px}
+.preset:hover{background:#1a1d2e;color:#e8e9ec}
+.section{margin-bottom:1.75rem}
+.section-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #1e2035}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.metric{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:.9rem 1rem}
+.metric-label{font-size:11px;color:#9ca3af;margin-bottom:.35rem;display:flex;align-items:center;gap:6px}
+.metric-value{font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.metric-sub{font-size:11px;color:#6b7280;margin-top:.3rem}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.chart-card{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:1rem 1.25rem;position:relative}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:#9ca3af;margin-bottom:.9rem}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.stack-chart{display:flex;align-items:stretch;gap:3px;height:240px;overflow-x:auto}
+.stack-chart .col{flex:1;min-width:14px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:default}
+.stack-chart .tot{font-size:10px;color:#9ca3af;font-variant-numeric:tabular-nums;height:14px;white-space:nowrap}
+.stack-chart .track{flex:1;width:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;overflow:hidden}
+.stack-chart .seg-fill{width:100%}
+.stack-chart .seg-fill:first-child{border-radius:4px 4px 0 0}
+.stack-chart .lbl{font-size:10px;color:#6b7280;white-space:nowrap;height:14px}
+.stack-chart.crowded .tot{display:none}
+.stack-chart.crowded .lbl{visibility:hidden}
+.stack-chart.crowded .col:nth-child(4n+1) .lbl{visibility:visible}
+.stack-chart .col:hover .track{opacity:.85}
+@media(max-width:700px){.stack-chart .tot{display:none}.stack-chart .lbl{visibility:hidden}.stack-chart .col:nth-child(4n+1) .lbl{visibility:visible}}
+.tip{position:absolute;pointer-events:none;background:#0f1117;border:1px solid #2d3148;border-radius:8px;padding:.55rem .75rem;font-size:12px;display:none;z-index:10;min-width:200px;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+.tip .h{font-weight:600;margin-bottom:.35rem}
+.tip .r{display:flex;align-items:center;gap:6px;color:#9ca3af;line-height:1.7}
+.tip .r b{margin-left:auto;color:#e8e9ec;font-weight:500;font-variant-numeric:tabular-nums}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:right;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;padding:.6rem .75rem;border-bottom:1px solid #1e2035;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;white-space:nowrap}
+td{padding:.55rem .75rem;border-bottom:1px solid #1a1d2e;text-align:right;font-variant-numeric:tabular-nums}
+td.zero{color:#4b5563}
+tr.totals td{font-weight:600;border-top:1px solid #2d3148}
+.note{font-size:12px;color:#6b7280;margin-top:.6rem;line-height:1.6}
+.warn-box{background:#2a1f12;border:1px solid #7c4a12;color:#fbbf24;border-radius:8px;padding:.6rem .9rem;font-size:12px;margin-bottom:1rem;display:none}
+.empty{font-size:13px;color:#4b5563;text-align:center;padding:3rem 0}
+.links-card{background:#161926;border:1px solid #1e2035;border-radius:10px;padding:1rem 1.25rem;font-size:13px;color:#9ca3af;line-height:1.6}
+.links-card ol{padding-left:1.2rem;margin:.4rem 0}
+.links-card code{background:#0f1117;border:1px solid #2d3148;border-radius:4px;padding:1px 5px;font-size:12px;color:#e8e9ec}
+.links-card select{font-size:13px;padding:6px 10px;border:1px solid #2d3148;border-radius:6px;background:#1a1d2e;color:#e8e9ec;font-family:inherit;max-width:100%}
+.link-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:.55rem 0;border-bottom:1px solid #1a1d2e}
+.link-row:last-child{border-bottom:none}
+.link-row .src{min-width:120px;color:#e8e9ec;font-weight:500}
+.link-row .url{flex:1;min-width:0;overflow-wrap:anywhere;color:#8b95c9;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.link-row .dim{color:#6b7280;font-size:12px}
+</style>
+<style>
+tr.group td{font-weight:600;border-top:1px solid #2d3148;background:#141725}
+tr.adset td:first-child{padding-left:1.5rem;color:#9ca3af}
+td.meta{color:#6b7280}
+.countries{font-size:11px;color:#6b7280;font-weight:400;margin-top:2px;white-space:normal}
+</style>
+</head>
+<body>
+<h1>Ad results</h1>
+<p class="subtitle" id="subtitle">Meta ad sets vs. Stripe sales</p>
+
+<div class="toast" id="toast"></div>
+
+<div class="status-bar">
+  <div class="left">
+    <a href="/dashboard">← Back to dashboard</a>
+    <div class="info" id="status-text"><span class="status-dot warn"></span>Loading…</div>
+  </div>
+  <div class="right">
+    <span class="user-pill" id="user-pill"></span>
+    <button class="btn primary" id="refresh-btn">↻ Reload from Meta and Stripe</button>
+    <button class="btn" id="signout-btn">Sign out</button>
+  </div>
+</div>
+
+<div class="warn-box" id="warn-box"></div>
+
+<div class="filter-bar">
+  <div class="filter-group"><label>From</label><input type="date" id="f-start"></div>
+  <div class="filter-group"><label>To</label><input type="date" id="f-end"></div>
+  <div class="filter-group">
+    <span class="preset" data-days="today">Today</span>
+    <span class="preset" data-days="yesterday">Yesterday</span>
+    <span class="preset" data-days="7">Last 7 days</span>
+    <span class="preset" data-days="14">Last 14 days</span>
+    <span class="preset" data-days="30">Last 30 days</span>
+    <span class="preset" data-days="campaign">Since Sep 1, 2026</span>
+  </div>
+</div>
+
+<div id="page" style="display:none">
+  <div class="section">
+    <div class="section-title">Totals in date range</div>
+    <div class="metric-grid" id="metrics"></div>
+  </div>
+  <div class="section">
+    <div class="section-title">By ad set</div>
+    <div class="chart-card table-wrap">
+      <table>
+        <thead><tr>
+          <th>Ad set / card country group</th><th>Spend</th><th>Meta purchases<br>(not counted)</th>
+          <th>€39 sales</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
+          <th>Paying customers</th><th>Cost per paying customer</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <p class="note" id="note"></p>
+  </div>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
+
+const DAY = 86400000;
+const fmt = (n) => Math.round(n).toLocaleString('en-US');
+const ymd = (d) => d.toISOString().slice(0, 10);
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+let currency = 'EUR';
+const money = (n) => n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency, maximumFractionDigits: 2 });
+const num = (n) => `<td class="${n ? '' : 'zero'}">${fmt(n || 0)}</td>`;
+
+let firebaseAuth = null;
+let loadSeq = 0;
+
+function toast(msg, isErr) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' error' : '');
+  setTimeout(() => { el.className = 'toast'; }, 4000);
+}
+
+const cfg = window.FIREBASE_CONFIG;
+if (!cfg || !cfg.apiKey) {
+  document.getElementById('status-text').innerHTML = '<span class="status-dot bad"></span>Firebase is not configured on the server.';
+} else {
+  firebaseAuth = getAuth(initializeApp(cfg));
+  onAuthStateChanged(firebaseAuth, (user) => {
+    if (!user) { location.href = '/login'; return; }
+    document.getElementById('user-pill').textContent = user.email;
+    setRange(7);
+  });
+}
+document.getElementById('signout-btn').addEventListener('click', () => {
+  if (firebaseAuth) signOut(firebaseAuth).then(() => location.href = '/login');
+});
+
+async function authFetch(url, opts = {}) {
+  const token = await firebaseAuth.currentUser.getIdToken();
+  return fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token } });
+}
+
+function setRange(days) {
+  const today = new Date();
+  let start = today, end = today;
+  if (days === 'yesterday') start = end = new Date(today.getTime() - DAY);
+  else if (days === 'campaign') start = new Date('2026-09-01T00:00:00Z');
+  else if (days !== 'today') start = new Date(today.getTime() - (days - 1) * DAY);
+  document.getElementById('f-start').value = ymd(start);
+  document.getElementById('f-end').value = ymd(end);
+  load();
+}
+
+async function load(fresh) {
+  const since = document.getElementById('f-start').value;
+  const until = document.getElementById('f-end').value;
+  if (!since || !until) return;
+  if (since > until) { toast('The start date is after the end date.', true); return; }
+  const seq = ++loadSeq;
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  document.getElementById('status-text').innerHTML = '<span class="status-dot warn"></span>Reading Meta and Stripe… (can take up to a minute for long ranges)';
+  try {
+    const q = new URLSearchParams({ since, until });
+    if (fresh) q.set('fresh', '1');
+    const res = await authFetch('/api/ads?' + q.toString());
+    if (res.status === 401 || res.status === 403) { location.href = '/login'; return; }
+    const data = await res.json();
+    if (seq !== loadSeq) return;
+    if (data.warming) {
+      document.getElementById('status-text').innerHTML = '<span class="status-dot warn"></span>Server warming up — loading data…';
+      setTimeout(() => { if (seq === loadSeq) load(fresh); }, 2500);
+      return;
+    }
+    if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+    render(data);
+  } catch (err) {
+    if (seq !== loadSeq) return;
+    document.getElementById('status-text').innerHTML = '<span class="status-dot bad"></span>Load failed: ' + esc(err.message);
+  } finally {
+    if (seq === loadSeq) btn.disabled = false;
+  }
+}
+
+function render(data) {
+  currency = data.currency || 'EUR';
+  document.getElementById('subtitle').textContent =
+    `Campaign "${data.campaign}" · ad account ${data.adAccount} · dates in ${data.timezone}`;
+  document.getElementById('status-text').innerHTML =
+    `<span class="status-dot"></span>${esc(data.since)} to ${esc(data.until)} · read at <strong>${esc(new Date(data.builtAt).toLocaleTimeString())}</strong>`;
+  const wb = document.getElementById('warn-box');
+  wb.innerHTML = (data.warnings || []).map(esc).join('<br>');
+  wb.style.display = data.warnings?.length ? 'block' : 'none';
+
+  const regs = data.regionOrder.map((k) => [k, data.regions[k]]);
+  const tot = { spend: 0, metaPurchases: 0, sales: 0, trials: 0, paidTrials: 0, inTrial: 0, paying: 0 };
+  for (const [, r] of regs) for (const k of Object.keys(tot)) tot[k] += r[k] || 0;
+  const adRegs = regs.filter(([k]) => k !== 'other');
+  const adPaying = adRegs.reduce((s, [, r]) => s + r.paying, 0);
+
+  document.getElementById('metrics').innerHTML = [
+    ['Spend', money(tot.spend), 'Meta, this campaign'],
+    ['€39 sales', fmt(tot.sales), '€39 payment link, all countries'],
+    ['Trials started', fmt(tot.trials), `${fmt(tot.inTrial)} still in trial`],
+    ['Paid trials', fmt(tot.paidTrials), tot.trials ? `${Math.round(100 * tot.paidTrials / tot.trials)}% of trials` : ''],
+    ['Cost per paying customer', money(adPaying && tot.spend ? tot.spend / adPaying : null), `${fmt(adPaying)} paying customers in ad countries`],
+    ['Meta purchases', fmt(tot.metaPurchases), 'Meta\'s own count · not used'],
+  ].map(([l, v, s]) => `<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${v}</div><div class="metric-sub">${s}</div></div>`).join('');
+
+  const stripeCells = (r) => num(r.sales) + num(r.trials) + num(r.paidTrials) + num(r.inTrial) + num(r.paying) +
+    `<td>${money(r.costPerPaying)}</td>`;
+  const countries = (r) => {
+    const c = Object.entries(r.countries || {}).sort((a, b) => b[1] - a[1]);
+    return c.length ? `<div class="countries">Paying by card country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : '';
+  };
+  let rows = '';
+  for (const [k, r] of regs) {
+    const sets = data.adsets.filter((a) => a.region === k);
+    if (sets.length === 1) {
+      rows += `<tr class="group"><td>${esc(sets[0].name)}<div class="countries">${esc(r.label)}</div>${countries(r)}</td>` +
+        `<td>${money(r.spend)}</td><td class="meta">${fmt(r.metaPurchases)}</td>${stripeCells(r)}</tr>`;
+      continue;
+    }
+    rows += `<tr class="group"><td>${esc(r.label)}${sets.length ? ` · ${sets.length} ad sets` : ''}${countries(r)}</td>` +
+      `<td>${k === 'other' && !r.spend ? '—' : money(r.spend)}</td><td class="meta">${k === 'other' && !r.metaPurchases ? '—' : fmt(r.metaPurchases)}</td>${stripeCells(r)}</tr>`;
+    for (const a of sets) {
+      rows += `<tr class="adset"><td>${esc(a.name)}</td><td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
+        '<td colspan="6" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td></tr>';
+    }
+  }
+  rows += `<tr class="totals"><td>Total</td><td>${money(tot.spend)}</td><td class="meta">${fmt(tot.metaPurchases)}</td>` +
+    num(tot.sales) + num(tot.trials) + num(tot.paidTrials) + num(tot.inTrial) + num(tot.paying) +
+    `<td>${money(adPaying && tot.spend ? tot.spend / adPaying : null)}</td></tr>`;
+  document.getElementById('tbody').innerHTML = rows;
+
+  document.getElementById('note').innerHTML =
+    'Spend and Meta purchases come from Meta. Meta purchases are Meta\'s own count and are not used anywhere else on this page. ' +
+    'Everything else comes from the main Stripe account ("Mr. Vig - Kartra"), split by the country of the card used: ' +
+    'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (the A/B test) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY.<br>' +
+    `Only two Stripe payment links count; every other €39 payment and trial is ignored. ` +
+    `<strong>€39 sales</strong>: paid checkouts of the €39 link (${esc(data.links?.direct || '')}) in the date range, one per customer.<br>` +
+    `<strong>Trials</strong>: checkouts of the free-trial link (${esc(data.links?.trial || '')}) in the date range, one per customer. ` +
+    '<strong>Paid trials</strong>: of those, the ones whose first €39 invoice was paid, even if that was after the end date. ' +
+    '<strong>Still in trial</strong>: trial not over yet.<br>' +
+    '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + paid trials). The total leaves out "Other countries", since no ad set targets them.';
+  document.getElementById('page').style.display = 'block';
+}
+
+document.getElementById('refresh-btn').addEventListener('click', () => load(true));
+document.getElementById('f-start').addEventListener('change', () => load());
+document.getElementById('f-end').addEventListener('change', () => load());
+document.querySelectorAll('.preset').forEach((el) => el.addEventListener('click', () => {
+  const d = el.dataset.days;
+  setRange(['today', 'yesterday', 'campaign'].includes(d) ? d : parseInt(d, 10));
+}));
+</script>
+</body>
+</html>
