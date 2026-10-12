@@ -269,6 +269,15 @@ function render(data) {
         `<td>${money(r.spend)}</td><td class="meta">${fmt(r.metaPurchases)}</td>${stripeCells(r)}</tr>`;
       continue;
     }
+    if (k === 'ee') {
+      // A/B test: each ad set gets only its own Stripe numbers (not combined).
+      for (const a of sets) {
+        rows += `<tr class="group"><td>${esc(a.name)}<div class="countries">${esc(r.label)}</div>${a.stripe ? countries(a.stripe) : ''}</td>` +
+          `<td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
+          (a.stripe ? stripeCells(a.stripe) : '<td colspan="6" class="zero" style="text-align:left">No Stripe sales assigned to this ad set</td>') + '</tr>';
+      }
+      continue;
+    }
     rows += `<tr class="group"><td>${esc(r.label)}${sets.length ? ` · ${sets.length} ad sets` : ''}${countries(r)}</td>` +
       `<td>${k === 'other' && !r.spend ? '—' : money(r.spend)}</td><td class="meta">${k === 'other' && !r.metaPurchases ? '—' : fmt(r.metaPurchases)}</td>${stripeCells(r)}</tr>`;
     for (const a of sets) {
@@ -284,7 +293,7 @@ function render(data) {
   document.getElementById('note').innerHTML =
     'Spend and Meta purchases come from Meta. Meta purchases are Meta\'s own count and are not used anywhere else on this page. ' +
     'Everything else comes from the main Stripe account ("Mr. Vig - Kartra"), split by the country of the card used: ' +
-    'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (the A/B test) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY.<br>' +
+    'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (the A/B test: €39 sales go to E_EUROPE_COLD_AMAZING_Full-Price, trials to Test B - E_EUROPE_COLD_AMAZING - Free Trial, each with its own cost per paying customer) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY.<br>' +
     `Only two Stripe payment links count; every other €39 payment and trial is ignored. ` +
     `<strong>€39 sales</strong>: paid checkouts of the €39 link (${esc(data.links?.direct || '')}) in the date range, one per customer.<br>` +
     `<strong>Trials</strong>: checkouts of the free-trial link (${esc(data.links?.trial || '')}) in the date range, one per customer. ` +
