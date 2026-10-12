@@ -122,6 +122,10 @@ td.meta{color:#6b7280}
     <span class="preset" data-days="30">Last 30 days</span>
     <span class="preset" data-days="campaign">Since Sep 1, 2026</span>
   </div>
+  <div class="filter-group" id="rate-group" style="display:none" title="Used to show euro revenue in dollars, as on the dashboard">
+    <label>EUR/USD</label>
+    <input type="number" id="rate-input" step="0.001" value="1.10" style="width:80px;font-size:13px;padding:5px 10px;border:1px solid #2d3148;border-radius:6px;background:#1a1d2e;color:#e8e9ec;font-family:inherit">
+  </div>
 </div>
 
 <div id="page" style="display:none">
@@ -155,8 +159,8 @@ td.meta{color:#6b7280}
       <table>
         <thead><tr>
           <th>Ad set / targeted countries</th><th>Spend</th><th>Meta purchases<br>(not counted)</th>
-          <th>Dictionary orders<br>(€7)</th><th>Order bumps<br>(€9)</th><th>Upsell trials</th><th>Upsell paid</th>
-          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer</th>
+          <th>Dictionary orders<br>(€7)</th><th>Order bumps<br>(€9)</th><th>Upsells<br>(trial or paid)</th><th>Upsell paid</th>
+          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer (€)</th>
         </tr></thead>
         <tbody id="d-tbody"></tbody>
       </table>
@@ -175,6 +179,12 @@ const fmt = (n) => Math.round(n).toLocaleString('en-US');
 const ymd = (d) => d.toISOString().slice(0, 10);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 let currency = 'EUR';
+// Stripe revenue is in euros; shown in € with the dollar figure next to it when the ad account uses dollars.
+const euro = (n) => n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 });
+const rate = () => parseFloat(document.getElementById('rate-input').value) || 1.10;
+const revenue = (n) => n == null || currency === 'EUR' ? euro(n) :
+  `${euro(n)} <span class="zero">(${(n * rate()).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })})</span>`;
+let lastData = null;
 const money = (n) => n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency, maximumFractionDigits: 2 });
 const num = (n) => `<td class="${n ? '' : 'zero'}">${fmt(n || 0)}</td>`;
 
@@ -251,7 +261,9 @@ async function load(fresh) {
 }
 
 function render(data) {
+  lastData = data;
   currency = data.currency || 'EUR';
+  document.getElementById('rate-group').style.display = currency === 'USD' ? '' : 'none';
   document.getElementById('subtitle').textContent =
     `Campaigns "${data.campaign}" and "${data.dictionary?.campaign || 'Atomic Dictionary - Cold - Ad Tests'}" · ad account ${data.adAccount} · dates in ${data.timezone}`;
   document.getElementById('status-text').innerHTML =
@@ -341,14 +353,14 @@ function renderDictionary(d) {
     ['Spend', money(d.total.spend), 'Meta, this campaign'],
     ['Dictionary orders', fmt(t.orders), 'all countries'],
     ['Order bumps', fmt(t.withBump), t.orders ? `${Math.round(100 * t.bumpPct)}% of orders` : ''],
-    ['Upsell trials', fmt(t.upsellTrials), `${fmt(t.upsellPaid)} paid · ${fmt(t.upsellInTrial)} still in trial`],
+    ['Upsells', fmt(t.upsellTrials), `${fmt(t.upsellPaid)} paid · ${fmt(t.upsellInTrial)} still in trial`],
     ['Cost per dictionary buyer', money(t.costPerBuyer), 'buyers in targeted countries'],
-    ['Revenue per buyer', money(t.revenuePerBuyer), `${money(t.revenueCents / 100)} in total so far`],
+    ['Revenue per buyer', revenue(t.revenuePerBuyer), `${revenue(t.revenueCents / 100)} in total so far`],
     ['Meta purchases', fmt(d.total.metaPurchases), 'Meta\'s own count · not used'],
   ].map(([l, v, s]) => `<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${v}</div><div class="metric-sub">${s}</div></div>`).join('');
 
   const cells = (st) => num(st.orders) + `<td>${fmt(st.withBump)}${pct(st)}</td>` + num(st.upsellTrials) + num(st.upsellPaid) +
-    `<td>${money(st.costPerBuyer)}</td><td>${money(st.revenuePerBuyer)}</td>`;
+    `<td>${money(st.costPerBuyer)}</td><td>${revenue(st.revenuePerBuyer)}</td>`;
   const buyers = (st) => {
     const c = Object.entries(st.countries || {}).sort((a, b) => b[1] - a[1]);
     return c.length ? `<div class="countries">Buyers by card country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : '';
@@ -379,20 +391,24 @@ function renderDictionary(d) {
   const found = d.sources.map((s) => {
     if (!s.configured) return `${esc(s.label)}: not set`;
     if (s.error) return `${esc(s.label)}: could not read`;
-    return `${esc(s.label)}: <strong>${fmt(s.orders)}</strong> dictionary orders (${fmt(s.withBump)} with bump), ${fmt(s.upsellTrials)} upsell trials` +
+    return `${esc(s.label)}: <strong>${fmt(s.orders)}</strong> dictionary orders (${fmt(s.withBump)} with bump), ${fmt(s.upsellTrials)} upsell trials from the payment link` +
+      (s.account === 'thrivecart' ? `, ${fmt(s.thrivecartUpsells)} Atomic Homework upsells to dictionary buyers` : '') +
       (s.unmatchedBumps ? `, ${fmt(s.unmatchedBumps)} €9 bumps with no dictionary order (not counted)` : '');
   }).join(' · ');
   document.getElementById('d-note').innerHTML =
     `<strong>Where the sales were found</strong>: ${found}.<br>` +
     'Both Stripe accounts are checked. <strong>Dictionary order</strong>: a paid €7 charge, or €16 (dictionary + bump in one charge). ' +
     '<strong>Order bump</strong>: the €16 charge, or a €9 charge by the same customer within 2 hours of a €7 charge. ' +
-    `<strong>Upsell trials</strong>: checkouts of ${esc(d.upsellLink)} (one per customer); <strong>Upsell paid</strong>: the first payment after the trial went through.<br>` +
+    `<strong>Upsells</strong>: checkouts of ${esc(d.upsellLink)} (one per customer), plus Atomic Homework sold through ThriveCart to a dictionary buyer (same email: a ThriveCart subscription started within 2 hours of the order, or any non-dictionary ThriveCart payment since). ` +
+    '<strong>Upsell paid</strong>: at least one payment went through.<br>' +
     'Sales go to an ad set by the card\'s country, using the countries each ad set targets in Meta. Only ad sets with spend in the chosen dates are used; ad sets with no spend are left out. Ad sets targeting exactly the same countries are shown as one group. ' +
     '<strong>Cost per dictionary buyer</strong> = spend ÷ dictionary orders (the total leaves out untargeted countries). ' +
-    '<strong>Revenue per buyer</strong> = (€7 dictionary + €9 bumps + upsell payments so far) ÷ dictionary orders.';
+    '<strong>Revenue per buyer</strong> = (€7 dictionary + €9 bumps + upsell payments so far) ÷ dictionary orders, in euros' +
+    (currency === 'USD' ? `; the dollar figure in brackets uses EUR/USD ${rate()}, set at the top (same default as the dashboard). Spend and cost per buyer are in dollars, as Meta reports them.` : '.');
 }
 
 document.getElementById('refresh-btn').addEventListener('click', () => load(true));
+document.getElementById('rate-input').addEventListener('input', () => { if (lastData) render(lastData); });
 document.getElementById('f-start').addEventListener('change', () => load());
 document.getElementById('f-end').addEventListener('change', () => load());
 document.querySelectorAll('.preset').forEach((el) => el.addEventListener('click', () => {
