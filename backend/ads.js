@@ -346,7 +346,9 @@ export async function buildAdsReport(since, until) {
 
   // Eastern Europe: give each A/B ad set only its own Stripe numbers. Both rows
   // are shown even when Meta reports no spend for one of them in the range.
+  // Other ad sets with no spend (e.g. the One Thing ad sets) are hidden.
   const ee = regions.ee;
+  adsets = adsets.filter((a) => a.spend > 0);
   for (const name of [EE_DIRECT_ADSET, EE_TRIAL_ADSET]) {
     if (!adsets.some((a) => sameName(a.name, name))) adsets.push({ id: '', name, region: 'ee', spend: 0, metaPurchases: 0 });
   }
