@@ -172,7 +172,8 @@ A second section on `/ads`, one row per ad set of that campaign: spend, Meta pur
 - Both Stripe accounts (`STRIPE_KEY` and `STRIPE_THRIVECART_KEY`) are checked; the page says how many sales each one had.
 - A dictionary order is a paid €7 charge, or €16 (dictionary + bump in one charge). A separate €9 charge by the same customer within 2 hours of a €7 charge counts as its bump. Charges naming another product are ignored.
 - Upsells also include Atomic Homework sold through ThriveCart (`STRIPE_THRIVECART_KEY`) to a dictionary buyer (same email): a ThriveCart subscription started within 2 hours of the order, or any non-dictionary ThriveCart payment since the order. Everything paid for it so far counts as that buyer's upsell revenue.
-- Stripe revenue is in euros and labelled €. When the ad account reports spend in dollars, the dollar figure is shown next to it using an EUR/USD rate set on the page (default 1.10, as on the dashboard).
+- Stripe revenue is in euros. When the ad account reports spend in dollars, revenue is shown in dollars with euros in brackets, using an EUR/USD rate set on the page (default 1.10, as on the dashboard).
+- Revenue so far (€7 + bumps + upsell payments so far) and ROAS (revenue in dollars ÷ spend) are shown per ad set and in the totals. The total ROAS, like cost per buyer, leaves out untargeted countries. Upsells also show as a percentage of dictionary orders.
 - Sales go to an ad set by card country, using each ad set's country targeting from Meta. Only ad sets with spend in the chosen dates are used; ad sets with no spend are ignored. Ad sets targeting exactly the same countries are shown as one group. Countries targeted by more than one group, or by none, get their own rows.
 
 ## Troubleshooting

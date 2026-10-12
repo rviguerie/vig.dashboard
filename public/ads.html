@@ -158,9 +158,9 @@ td.meta{color:#6b7280}
     <div class="chart-card table-wrap">
       <table>
         <thead><tr>
-          <th>Ad set / targeted countries</th><th>Spend</th><th>Meta purchases<br>(not counted)</th>
+          <th>Ad set / targeted countries</th><th>Spend</th><th>Revenue<br>so far</th><th>ROAS</th><th>Meta purchases<br>(not counted)</th>
           <th>Dictionary orders<br>(€7)</th><th>Order bumps<br>(€9)</th><th>Upsells<br>(trial or paid)</th><th>Upsell paid</th>
-          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer (€)</th>
+          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer</th>
         </tr></thead>
         <tbody id="d-tbody"></tbody>
       </table>
@@ -179,11 +179,14 @@ const fmt = (n) => Math.round(n).toLocaleString('en-US');
 const ymd = (d) => d.toISOString().slice(0, 10);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 let currency = 'EUR';
-// Stripe revenue is in euros; shown in € with the dollar figure next to it when the ad account uses dollars.
+// Stripe revenue is in euros.
 const euro = (n) => n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 });
 const rate = () => parseFloat(document.getElementById('rate-input').value) || 1.10;
-const revenue = (n) => n == null || currency === 'EUR' ? euro(n) :
-  `${euro(n)} <span class="zero">(${(n * rate()).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })})</span>`;
+// Total revenue: dollars first with euros in brackets (just euros if the ad account uses euros).
+const usd = (n) => (n * rate()).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+const revenueUsd = (n) => n == null ? '—' : currency === 'EUR' ? euro(n) : `${usd(n)} <span class="zero">(${euro(n)})</span>`;
+// Return on ad spend: revenue in the ad account's currency ÷ spend.
+const roas = (revEur, spend) => spend ? ((currency === 'EUR' ? revEur : revEur * rate()) / spend).toFixed(2) + 'x' : '—';
 let lastData = null;
 const money = (n) => n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency, maximumFractionDigits: 2 });
 const num = (n) => `<td class="${n ? '' : 'zero'}">${fmt(n || 0)}</td>`;
@@ -349,18 +352,24 @@ function renderDictionary(d) {
   }
   const t = d.total.stats;
   const pct = (st) => st.orders ? ` <span class="zero">(${Math.round(100 * st.bumpPct)}%)</span>` : '';
+  const upPct = (st) => st.orders ? ` <span class="zero">(${Math.round(100 * st.upsellTrials / st.orders)}%)</span>` : '';
+  // Revenue from untargeted countries didn't come from these ads, so the total ROAS leaves it out (like cost per buyer).
+  const targetedRev = (t.revenueCents - d.other.stats.revenueCents) / 100;
+  const revCells = (st, spend) => `<td>${revenueUsd(st.revenueCents / 100)}</td><td>${roas(st.revenueCents / 100, spend)}</td>`;
   document.getElementById('d-metrics').innerHTML = [
     ['Spend', money(d.total.spend), 'Meta, this campaign'],
+    ['Revenue', currency === 'EUR' ? euro(t.revenueCents / 100) : usd(t.revenueCents / 100), currency === 'EUR' ? '€7 + bumps + upsells so far' : `${euro(t.revenueCents / 100)} · €7 + bumps + upsells so far`],
+    ['ROAS', roas(targetedRev, d.total.spend), 'revenue ÷ spend, targeted countries'],
     ['Dictionary orders', fmt(t.orders), 'all countries'],
     ['Order bumps', fmt(t.withBump), t.orders ? `${Math.round(100 * t.bumpPct)}% of orders` : ''],
-    ['Upsells', fmt(t.upsellTrials), `${fmt(t.upsellPaid)} paid · ${fmt(t.upsellInTrial)} still in trial`],
+    ['Upsells', fmt(t.upsellTrials), `${t.orders ? Math.round(100 * t.upsellTrials / t.orders) + '% of orders · ' : ''}${fmt(t.upsellPaid)} paid · ${fmt(t.upsellInTrial)} still in trial`],
     ['Cost per dictionary buyer', money(t.costPerBuyer), 'buyers in targeted countries'],
-    ['Revenue per buyer', revenue(t.revenuePerBuyer), `${revenue(t.revenueCents / 100)} in total so far`],
+    ['Revenue per buyer', currency === 'EUR' ? euro(t.revenuePerBuyer) : (t.revenuePerBuyer == null ? '—' : usd(t.revenuePerBuyer)), currency === 'EUR' ? 'per dictionary order' : `${euro(t.revenuePerBuyer)} per dictionary order`],
     ['Meta purchases', fmt(d.total.metaPurchases), 'Meta\'s own count · not used'],
   ].map(([l, v, s]) => `<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${v}</div><div class="metric-sub">${s}</div></div>`).join('');
 
-  const cells = (st) => num(st.orders) + `<td>${fmt(st.withBump)}${pct(st)}</td>` + num(st.upsellTrials) + num(st.upsellPaid) +
-    `<td>${money(st.costPerBuyer)}</td><td>${revenue(st.revenuePerBuyer)}</td>`;
+  const cells = (st) => num(st.orders) + `<td>${fmt(st.withBump)}${pct(st)}</td>` + `<td>${fmt(st.upsellTrials)}${upPct(st)}</td>` + num(st.upsellPaid) +
+    `<td>${money(st.costPerBuyer)}</td><td>${revenueUsd(st.revenuePerBuyer)}</td>`;
   const buyers = (st) => {
     const c = Object.entries(st.countries || {}).sort((a, b) => b[1] - a[1]);
     return c.length ? `<div class="countries">Buyers by card country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : '';
@@ -371,21 +380,21 @@ function renderDictionary(d) {
     if (g.adsets.length === 1) {
       const a = g.adsets[0];
       rows += `<tr class="group"><td>${esc(a.name)}${targets(g)}${buyers(g.stats)}</td><td>${money(a.spend)}</td>` +
-        `<td class="meta">${fmt(a.metaPurchases)}</td>${cells(g.stats)}</tr>`;
+        `${revCells(g.stats, a.spend)}<td class="meta">${fmt(a.metaPurchases)}</td>${cells(g.stats)}</tr>`;
       continue;
     }
     rows += `<tr class="group"><td>${g.adsets.length} ad sets with the same countries${targets(g)}${buyers(g.stats)}</td>` +
-      `<td>${money(g.spend)}</td><td class="meta">${fmt(g.metaPurchases)}</td>${cells(g.stats)}</tr>`;
+      `<td>${money(g.spend)}</td>${revCells(g.stats, g.spend)}<td class="meta">${fmt(g.metaPurchases)}</td>${cells(g.stats)}</tr>`;
     for (const a of g.adsets) {
-      rows += `<tr class="adset"><td>${esc(a.name)}</td><td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
+      rows += `<tr class="adset"><td>${esc(a.name)}</td><td>${money(a.spend)}</td><td class="zero">—</td><td class="zero">—</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
         '<td colspan="6" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td></tr>';
     }
   }
   for (const extra of [d.overlap, d.other]) {
     if (!extra.stats.orders && !extra.stats.upsellTrials) continue;
-    rows += `<tr class="group"><td>${esc(extra.label)}${buyers(extra.stats)}</td><td>—</td><td class="meta">—</td>${cells(extra.stats)}</tr>`;
+    rows += `<tr class="group"><td>${esc(extra.label)}${buyers(extra.stats)}</td><td>—</td>${revCells(extra.stats, 0)}<td class="meta">—</td>${cells(extra.stats)}</tr>`;
   }
-  rows += `<tr class="totals"><td>Total</td><td>${money(d.total.spend)}</td><td class="meta">${fmt(d.total.metaPurchases)}</td>${cells(t)}</tr>`;
+  rows += `<tr class="totals"><td>Total</td><td>${money(d.total.spend)}</td><td>${revenueUsd(t.revenueCents / 100)}</td><td>${roas(targetedRev, d.total.spend)}</td><td class="meta">${fmt(d.total.metaPurchases)}</td>${cells(t)}</tr>`;
   document.getElementById('d-tbody').innerHTML = rows;
 
   const found = d.sources.map((s) => {
@@ -403,8 +412,10 @@ function renderDictionary(d) {
     '<strong>Upsell paid</strong>: at least one payment went through.<br>' +
     'Sales go to an ad set by the card\'s country, using the countries each ad set targets in Meta. Only ad sets with spend in the chosen dates are used; ad sets with no spend are left out. Ad sets targeting exactly the same countries are shown as one group. ' +
     '<strong>Cost per dictionary buyer</strong> = spend ÷ dictionary orders (the total leaves out untargeted countries). ' +
-    '<strong>Revenue per buyer</strong> = (€7 dictionary + €9 bumps + upsell payments so far) ÷ dictionary orders, in euros' +
-    (currency === 'USD' ? `; the dollar figure in brackets uses EUR/USD ${rate()}, set at the top (same default as the dashboard). Spend and cost per buyer are in dollars, as Meta reports them.` : '.');
+    '<strong>Revenue so far</strong> = €7 dictionary + €9 bumps + upsell payments so far, shown in dollars with euros in brackets. <strong>ROAS</strong> = revenue in dollars ÷ spend (the total leaves out untargeted countries). ' +
+    '<strong>Upsells</strong> percentage = upsells ÷ dictionary orders. ' +
+    '<strong>Revenue per buyer</strong> = (€7 dictionary + €9 bumps + upsell payments so far) ÷ dictionary orders.' +
+    (currency === 'USD' ? ` Stripe amounts are in euros and converted to dollars at EUR/USD ${rate()}, set at the top (same default as the dashboard). Spend and cost per buyer are in dollars, as Meta reports them.` : '');
 }
 
 document.getElementById('refresh-btn').addEventListener('click', () => load(true));
