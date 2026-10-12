@@ -14,7 +14,8 @@
  *   Upsell revenue    everything paid so far on those subscriptions
  * Charges whose description names another product are ignored.
  *
- * Sales go to an ad set by card country. Ad sets targeting exactly the same
+ * Sales go to an ad set by card country. Only ad sets with spend in the chosen
+ * dates are used; ad sets with no spend are left out. Ad sets targeting exactly the same
  * countries form one group (Stripe can't tell them apart). A country targeted
  * by more than one group, or by none, gets its own row.
  */
@@ -137,13 +138,14 @@ export async function buildDictionarySection(since, until, from, to, hasMeta) {
     }
   }
 
-  // Ad sets: every ad set in the campaign, with spend for the dates (0 if none).
+  // Ad sets with spend for the dates. Ad sets with no spend are ignored, so
+  // their countries don't take sales away from the ones that ran.
   const byId = new Map(targeting.map((t) => [t.id, { ...t, spend: 0, metaPurchases: 0 }]));
   for (const i of insights) {
     const a = byId.get(i.id) || { id: i.id, name: i.name, countries: [] };
     byId.set(i.id, { ...a, spend: i.spend, metaPurchases: i.metaPurchases });
   }
-  const adsets = [...byId.values()];
+  const adsets = [...byId.values()].filter((a) => a.spend > 0);
 
   // Groups: ad sets with the same country list.
   const groups = new Map();

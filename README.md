@@ -171,7 +171,7 @@ A second section on `/ads`, one row per ad set of that campaign: spend, Meta pur
 
 - Both Stripe accounts (`STRIPE_KEY` and `STRIPE_THRIVECART_KEY`) are checked; the page says how many sales each one had.
 - A dictionary order is a paid €7 charge, or €16 (dictionary + bump in one charge). A separate €9 charge by the same customer within 2 hours of a €7 charge counts as its bump. Charges naming another product are ignored.
-- Sales go to an ad set by card country, using each ad set's country targeting from Meta. Ad sets targeting exactly the same countries are shown as one group. Countries targeted by more than one group, or by none, get their own rows.
+- Sales go to an ad set by card country, using each ad set's country targeting from Meta. Only ad sets with spend in the chosen dates are used; ad sets with no spend are ignored. Ad sets targeting exactly the same countries are shown as one group. Countries targeted by more than one group, or by none, get their own rows.
 
 ## Troubleshooting
 
