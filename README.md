@@ -165,6 +165,14 @@ Only those two payment links count; every other €39 payment and trial is ignor
 
 Stripe numbers are split by card country: BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA = the Eastern Europe A/B test; DE, AT, CH, NL, BE, FR, LU = the W_EUROPE ad set; ES, PT, IT, GR, CY = the S_EUROPE ad set. Ad sets are matched by name (containing `W_EUROPE` or `S_EUROPE`; every other ad set in the campaign is the A/B test). In the A/B test the ad sets are not combined: €39 sales show only on `E_EUROPE_COLD_AMAZING_Full-Price` and trials only on `Test B - E_EUROPE_COLD_AMAZING - Free Trial`, each with cost per paying customer from its own spend.
 
+### Atomic Dictionary - Cold - Ad Tests
+
+A second section on `/ads`, one row per ad set of that campaign: spend, Meta purchases (shown only), dictionary orders (€7), order bumps (€9, count and %), Atomic Homework upsell trials from payment link `plink_1U9NdTBRJTRkwDOL24SVW02T` and how many became paid, cost per dictionary buyer, and revenue per buyer (€7 + bumps + upsell payments so far).
+
+- Both Stripe accounts (`STRIPE_KEY` and `STRIPE_THRIVECART_KEY`) are checked; the page says how many sales each one had.
+- A dictionary order is a paid €7 charge, or €16 (dictionary + bump in one charge). A separate €9 charge by the same customer within 2 hours of a €7 charge counts as its bump. Charges naming another product are ignored.
+- Sales go to an ad set by card country, using each ad set's country targeting from Meta. Ad sets targeting exactly the same countries are shown as one group. Countries targeted by more than one group, or by none, get their own rows.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -192,6 +200,7 @@ app/
 │   ├── members.js         # Member sources: subscription sync (2 accounts) + source rules
 │   ├── source-links.js    # Tagged checkout links (copies a Payment Link per source)
 │   ├── ads.js             # /ads: Meta ad set spend vs. Stripe sales by card country
+│   ├── ads-dictionary.js  # /ads: Atomic Dictionary campaign section
 │   └── seed.js            # One-shot CSV → Firestore bulk load
 ├── public/
 │   ├── login.html         # Google sign-in
