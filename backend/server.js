@@ -7,6 +7,7 @@
  *   GET  /api/charges          Cached charge list (auth required)
  *   POST /api/refresh          Force a Stripe pull now (auth required)
  *   GET  /api/members          Atomic Homework member join dates + sources (auth required)
+ *   GET  /api/ads              Meta ad sets vs. Stripe sales for a date range (auth required)
  *   GET  /api/source-links     Saved tagged checkout links (+ copyable links if write key set)
  *   POST /api/source-links     Create tagged copies of a checkout link (needs STRIPE_WRITE_KEY)
  *   POST /api/source-links/deactivate  Switch off a tagged copy (needs STRIPE_WRITE_KEY)
@@ -33,6 +34,7 @@ import { refreshPayPal } from './paypal-refresh.js';
 import { chatWithData } from './chat.js';
 import { warmMembers, syncMembers, buildMembers, getMembersMeta, SOURCES } from './members.js';
 import { hasWriteKey, listTemplates, createTaggedLinks, savedLinks, deactivateLink } from './source-links.js';
+import { buildAdsReport, clearAdsCache } from './ads.js';
 import { startCron } from './cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,6 +112,17 @@ app.get('/api/members', auth, (_req, res) => {
   const meta = getMembersMeta();
   if (!getCacheMeta().warmedAt || !meta.warmedAt) return res.json({ warming: true });
   res.json({ ...buildMembers(), sources: SOURCES, ...meta });
+});
+
+app.get('/api/ads', auth, async (req, res) => {
+  if (!getCacheMeta().warmedAt) return res.json({ warming: true });
+  try {
+    if (req.query.fresh === '1') clearAdsCache();
+    res.json(await buildAdsReport(String(req.query.since || ''), String(req.query.until || '')));
+  } catch (err) {
+    console.error('[/api/ads] failed:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/source-links', auth, async (_req, res) => {

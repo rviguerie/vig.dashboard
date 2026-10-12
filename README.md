@@ -61,6 +61,7 @@ See `.env.example`. Required ones:
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase console → Project settings → Service accounts → Generate new private key. Paste the entire JSON as a single-line string. |
 | `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID` | Firebase console → Project settings → "Your apps" → Web app config |
 | `ALLOWED_EMAILS` | Comma-separated list of Google email addresses allowed to sign in |
+| `META_ACCESS_TOKEN` | Read-only Meta token with `ads_read` on ad account 796462494198580 (Meta Business Settings → System users → Generate token). Used by `/ads`. |
 | `REFRESH_CRON` | Optional. Cron syntax. Default: `0 * * * *` (top of every hour) |
 
 ---
@@ -147,6 +148,21 @@ The members page has a **Tagged checkout links** section. Pick one of your exist
 
 Put the store link on the store page, the upsell-emails link in the upsell emails and the daily-emails link in the daily emails.
 
+## Ad results (`/ads`)
+
+For each Meta ad set in the campaign "Atomic Homework September 2026" (ad account 796462494198580), for a chosen date range. Read live from Meta and Stripe (cached 10 minutes; the reload button skips the cache). Dates use the ad account's time zone.
+
+| Column | Where it comes from |
+|---|---|
+| Spend | Meta Ads API |
+| Meta purchases | Meta's own purchase count. Shown only; never counted as sales. |
+| €39 sales | Main Stripe account ("Mr. Vig - Kartra"): paid €39 payments in the range that are the customer's first €39 payment, not counting renewals or the first payment after a free trial |
+| Trials | €39 subscriptions whose free trial started in the range, one per customer |
+| Paid trials | Trials whose first €39 invoice was paid (even after the end date) |
+| Cost per paying customer | Spend ÷ (€39 sales + paid trials) |
+
+Stripe numbers are split by card country: BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA = the Eastern Europe A/B test; DE, AT, CH, NL, BE, FR, LU = the W_EUROPE ad set; ES, PT, IT, GR, CY = the S_EUROPE ad set. Ad sets are matched by name (containing `W_EUROPE` or `S_EUROPE`; every other ad set in the campaign is the A/B test). Stripe can't tell the A/B test ad sets apart, so their Stripe numbers are shown together.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -173,11 +189,13 @@ app/
 │   ├── cron.js            # node-cron hourly schedule
 │   ├── members.js         # Member sources: subscription sync (2 accounts) + source rules
 │   ├── source-links.js    # Tagged checkout links (copies a Payment Link per source)
+│   ├── ads.js             # /ads: Meta ad set spend vs. Stripe sales by card country
 │   └── seed.js            # One-shot CSV → Firestore bulk load
 ├── public/
 │   ├── login.html         # Google sign-in
 │   ├── dashboard.html     # The dashboard (calls /api/charges)
-│   └── members.html       # Where Atomic Homework members come from (calls /api/members)
+│   ├── members.html       # Where Atomic Homework members come from (calls /api/members)
+│   └── ads.html           # Ad results per ad set (calls /api/ads)
 ├── package.json
 ├── railway.json
 ├── .env.example
