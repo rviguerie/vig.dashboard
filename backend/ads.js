@@ -18,6 +18,10 @@
  *   Paid trials   trials whose first €39 invoice was paid (whenever that was)
  *   Cost per paying customer = spend ÷ (€39 sales + paid trials)
  *
+ * In the Eastern Europe A/B test the ad sets are not combined: €39 sales go
+ * only to EE_DIRECT_ADSET and trials only to EE_TRIAL_ADSET, each with its own
+ * cost per paying customer.
+ *
  * Dates are read in the ad account's time zone so Meta and Stripe line up.
  */
 
@@ -52,6 +56,12 @@ const adsetRegion = (name) => {
   if (/s[_\s-]?europe/i.test(name || '')) return 's_eu';
   return 'ee';
 };
+
+// In the Eastern Europe A/B test, €39 sales belong to the full-price ad set and
+// trials to the free-trial ad set; each gets its own cost per paying customer.
+const EE_DIRECT_ADSET = 'E_EUROPE_COLD_AMAZING_Full-Price';
+const EE_TRIAL_ADSET = 'Test B - E_EUROPE_COLD_AMAZING - Free Trial';
+const sameName = (a, b) => (a || '').trim().toLowerCase() === b.toLowerCase();
 
 const cache = new Map(); // "since|until" → { at, data }
 
@@ -285,21 +295,45 @@ export async function buildAdsReport(since, until) {
 
   const regions = {};
   for (const k of Object.keys(REGIONS)) {
-    regions[k] = { label: REGIONS[k].label, spend: 0, metaPurchases: 0, sales: 0, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: {} };
+    regions[k] = { label: REGIONS[k].label, spend: 0, metaPurchases: 0, sales: 0, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: {}, salesCountries: {}, trialCountries: {} };
   }
   for (const a of adsets) { regions[a.region].spend += a.spend; regions[a.region].metaPurchases += a.metaPurchases; }
-  const bump = (r, c) => { if (c) r.countries[c] = (r.countries[c] || 0) + 1; };
-  for (const s of sales) { regions[s.region].sales++; bump(regions[s.region], s.country); }
+  const bump = (m, c) => { if (c) m[c] = (m[c] || 0) + 1; };
+  for (const s of sales) {
+    const r = regions[s.region];
+    r.sales++;
+    bump(r.countries, s.country);
+    bump(r.salesCountries, s.country);
+  }
   for (const t of trials) {
     const r = regions[t.region];
     r.trials++;
-    if (t.state === 'paid') { r.paidTrials++; bump(r, t.country); }
+    if (t.state === 'paid') { r.paidTrials++; bump(r.countries, t.country); bump(r.trialCountries, t.country); }
     else if (t.state === 'in_trial') r.inTrial++;
     else if (t.state === 'pending') r.pendingTrials++;
   }
   for (const r of Object.values(regions)) {
     r.paying = r.sales + r.paidTrials;
     r.costPerPaying = r.paying && r.spend ? r.spend / r.paying : null;
+  }
+
+  // Eastern Europe: give each A/B ad set only its own Stripe numbers. Both rows
+  // are shown even when Meta reports no spend for one of them in the range.
+  const ee = regions.ee;
+  for (const name of [EE_DIRECT_ADSET, EE_TRIAL_ADSET]) {
+    if (!adsets.some((a) => sameName(a.name, name))) adsets.push({ id: '', name, region: 'ee', spend: 0, metaPurchases: 0 });
+  }
+  for (const a of adsets) {
+    if (a.region !== 'ee') continue;
+    const direct = sameName(a.name, EE_DIRECT_ADSET);
+    const trial = sameName(a.name, EE_TRIAL_ADSET);
+    if (!direct && !trial) { a.stripe = null; continue; }
+    const st = direct
+      ? { sales: ee.sales, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: ee.salesCountries }
+      : { sales: 0, trials: ee.trials, paidTrials: ee.paidTrials, inTrial: ee.inTrial, pendingTrials: ee.pendingTrials, countries: ee.trialCountries };
+    st.paying = st.sales + st.paidTrials;
+    st.costPerPaying = st.paying && a.spend ? a.spend / st.paying : null;
+    a.stripe = st;
   }
 
   const data = {
