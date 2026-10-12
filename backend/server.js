@@ -115,7 +115,6 @@ app.get('/api/members', auth, (_req, res) => {
 });
 
 app.get('/api/ads', auth, async (req, res) => {
-  if (!getCacheMeta().warmedAt) return res.json({ warming: true });
   try {
     if (req.query.fresh === '1') clearAdsCache();
     res.json(await buildAdsReport(String(req.query.since || ''), String(req.query.until || '')));

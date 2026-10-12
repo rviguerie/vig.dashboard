@@ -12,18 +12,14 @@
  *   s_eu    ES PT IT GR CY                  → the S_EUROPE ad set
  *   other   every other country
  *
- *   €39 sales     paid €39 EUR charges in the range that are the customer's
- *                 first €39 payment (renewals excluded) and are not the first
- *                 payment after a free trial (those are counted as paid trials)
- *   Trials        subscriptions at €39 whose free trial started in the range
- *                 (one per customer)
+ * Only two payment links count; every other €39 payment or trial is ignored:
+ *   €39 sales     paid checkouts of DIRECT_LINK in the range (one per customer)
+ *   Trials        completed checkouts of TRIAL_LINK in the range (one per customer)
  *   Paid trials   trials whose first €39 invoice was paid (whenever that was)
  *   Cost per paying customer = spend ÷ (€39 sales + paid trials)
  *
  * Dates are read in the ad account's time zone so Meta and Stripe line up.
  */
-
-import { getCachedCharges } from './cache.js';
 
 const CAMPAIGN = 'Atomic Homework September 2026';
 const AD_ACCOUNT = 'act_796462494198580';
@@ -32,6 +28,9 @@ const STRIPE_BASE = 'https://api.stripe.com/v1';
 // Pinned so invoice.charge / charge.invoice exist whatever the account default is.
 const STRIPE_VERSION = '2024-06-20';
 const PRICE_CENTS = 3900;
+// Only sales through these two Stripe payment links count.
+const DIRECT_LINK = 'plink_1TAh4gBRJTRkwDOLrKOnTE5R'; // €39, pays straight away
+const TRIAL_LINK = 'plink_1UPnBuBRJTRkwDOL5OuauwiB';  // free trial, then €39
 const MAX_PAGES = 200;
 const CACHE_MS = 10 * 60 * 1000;
 const DAY = 86400;
@@ -173,79 +172,63 @@ async function metaAdsets(since, until) {
 
 const identOf = (email, customerId) => (email || '').toLowerCase() || customerId || '';
 
-/** ident → sorted unix times of every paid €39 charge in the ledger. */
-function ledger39() {
-  const m = new Map();
-  for (const c of getCachedCharges()) {
-    if (c.status !== 'Paid' && c.status !== 'Refunded') continue;
-    if (c.channel === 'thrivecart' || c.channel === 'paypal') continue;
-    if (Math.abs((parseFloat(c.amount) || 0) - PRICE_CENTS / 100) > 0.005) continue;
-    const id = identOf(c.customer_email, c.customer_id);
-    if (!id) continue;
-    if (!m.has(id)) m.set(id, []);
-    m.get(id).push(parseInt(c.created, 10));
-  }
-  return m;
-}
-
-/** First-time €39 sales in [from, to), excluding first payments after a free trial. */
-async function stripeSales(from, to) {
-  const raw = await stripeList('/charges', [
+/** Completed checkouts of one payment link started in [from, to). */
+async function linkCheckouts(link, from, to, expand) {
+  const raw = await stripeList('/checkout/sessions', [
+    ['payment_link', link], ['status', 'complete'],
     ['created[gte]', String(from)], ['created[lt]', String(to)],
-    ['expand[]', 'data.customer'], ['expand[]', 'data.invoice'],
+    ...expand.map((e) => ['expand[]', e]),
   ]);
-  const earlier = ledger39();
-  const seen = new Set();
-  const sales = [];
-  let renewals = 0;
-  let trialFirstPayments = 0;
-  for (const c of raw.sort((a, b) => a.created - b.created)) {
-    if (c.status !== 'succeeded' || !c.paid || c.refunded) continue;
-    if (c.amount !== PRICE_CENTS || (c.currency || '').toLowerCase() !== 'eur') continue;
-    const cust = typeof c.customer === 'object' && c.customer ? c.customer : null;
-    const email = cust?.email || c.billing_details?.email || c.receipt_email || '';
-    const id = identOf(email, cust?.id || c.customer || '');
-    if (id && ((earlier.get(id) || []).some((t) => t < c.created) || seen.has(id))) { renewals++; continue; }
-    if (id) seen.add(id);
-    // A customer's first €39 payment on a regular billing cycle invoice comes right after a free trial.
-    const inv = typeof c.invoice === 'object' && c.invoice ? c.invoice : null;
-    if (inv && inv.billing_reason === 'subscription_cycle') { trialFirstPayments++; continue; }
-    const country = c.payment_method_details?.card?.country || c.billing_details?.address?.country || '';
-    sales.push({ region: regionOf(country), country });
-  }
-  return { sales, renewals, trialFirstPayments };
+  return raw.sort((a, b) => a.created - b.created);
 }
 
-const subPriceCents = (s) => {
-  const it = s.items?.data?.[0];
-  return it?.price?.unit_amount ?? it?.plan?.amount ?? null;
+const sessionIdent = (cs) => {
+  const cust = typeof cs.customer === 'object' && cs.customer ? cs.customer : null;
+  return identOf(cs.customer_details?.email || cust?.email, cust?.id || cs.customer || '');
 };
 
-/** €39 subscriptions whose free trial started in [from, to), with whether the first €39 invoice was paid. */
+/** Paid checkouts of the €39 direct link, one per customer. */
+async function stripeSales(from, to) {
+  const raw = await linkCheckouts(DIRECT_LINK, from, to, [
+    'data.payment_intent.latest_charge', 'data.subscription.latest_invoice.charge',
+  ]);
+  const seen = new Set();
+  const sales = [];
+  for (const cs of raw) {
+    if (cs.payment_status !== 'paid') continue;
+    const id = sessionIdent(cs);
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    const charge = cs.payment_intent?.latest_charge || cs.subscription?.latest_invoice?.charge;
+    const country = (typeof charge === 'object' && charge?.payment_method_details?.card?.country) ||
+      cs.customer_details?.address?.country || '';
+    sales.push({ region: regionOf(country), country });
+  }
+  return sales;
+}
+
+/** Checkouts of the free-trial link, one per customer, with whether the first €39 invoice was paid. */
 async function stripeTrials(from, to) {
-  // A trial starts when the subscription is created, so this window holds every trial that started in range.
-  const raw = await stripeList('/subscriptions', [
-    ['status', 'all'], ['created[gte]', String(from)], ['created[lt]', String(to)],
-    ['expand[]', 'data.default_payment_method'],
-    ['expand[]', 'data.customer.invoice_settings.default_payment_method'],
+  const raw = await linkCheckouts(TRIAL_LINK, from, to, [
+    'data.subscription.default_payment_method',
+    'data.customer.invoice_settings.default_payment_method',
   ]);
   const seen = new Set();
   const subs = [];
-  for (const s of raw.sort((a, b) => a.created - b.created)) {
-    if (!s.trial_start || s.trial_start < from || s.trial_start >= to) continue;
-    if (subPriceCents(s) !== PRICE_CENTS) continue;
-    const cust = typeof s.customer === 'object' && s.customer ? s.customer : null;
-    const id = identOf(cust?.email, cust?.id || s.customer);
+  for (const cs of raw) {
+    const s = typeof cs.subscription === 'object' && cs.subscription ? cs.subscription : null;
+    if (!s) continue;
+    const id = sessionIdent(cs);
     if (id && seen.has(id)) continue;
     if (id) seen.add(id);
-    subs.push(s);
+    subs.push({ cs, s });
   }
   const now = Date.now() / 1000;
-  return pool(subs, 5, async (s) => {
-    const cust = typeof s.customer === 'object' && s.customer ? s.customer : null;
+  return pool(subs, 5, async ({ cs, s }) => {
+    const cust = typeof cs.customer === 'object' && cs.customer ? cs.customer : null;
     let country = cardCountry(s.default_payment_method) || cardCountry(cust?.invoice_settings?.default_payment_method);
     let state = 'unpaid';
-    if (s.trial_end && s.trial_end > now && s.status === 'trialing') state = 'in_trial';
+    if (s.status === 'trialing' && s.trial_end && s.trial_end > now) state = 'in_trial';
     else {
       const invoices = await stripeList('/invoices', [['subscription', s.id], ['expand[]', 'data.charge']]);
       const first = invoices.filter((i) => (i.total || 0) >= PRICE_CENTS).sort((a, b) => a.created - b.created)[0];
@@ -256,6 +239,7 @@ async function stripeTrials(from, to) {
         country = first.charge.payment_method_details?.card?.country || '';
       }
     }
+    if (!country) country = cs.customer_details?.address?.country || '';
     return { region: regionOf(country), country, state };
   });
 }
@@ -290,7 +274,14 @@ export async function buildAdsReport(since, until) {
   const nextDay = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
   const to = zonedMidnight(nextDay, tz);
 
-  const [salesRes, trials] = await Promise.all([stripeSales(from, to), stripeTrials(from, to)]);
+  let sales = [];
+  let trials = [];
+  try {
+    [sales, trials] = await Promise.all([stripeSales(from, to), stripeTrials(from, to)]);
+  } catch (err) {
+    if (/Stripe 403/.test(err.message)) throw new Error('The Stripe key cannot read checkouts. Add "Checkout Sessions: Read" to the restricted key (STRIPE_KEY). ' + err.message);
+    throw err;
+  }
 
   const regions = {};
   for (const k of Object.keys(REGIONS)) {
@@ -298,7 +289,7 @@ export async function buildAdsReport(since, until) {
   }
   for (const a of adsets) { regions[a.region].spend += a.spend; regions[a.region].metaPurchases += a.metaPurchases; }
   const bump = (r, c) => { if (c) r.countries[c] = (r.countries[c] || 0) + 1; };
-  for (const s of salesRes.sales) { regions[s.region].sales++; bump(regions[s.region], s.country); }
+  for (const s of sales) { regions[s.region].sales++; bump(regions[s.region], s.country); }
   for (const t of trials) {
     const r = regions[t.region];
     r.trials++;
@@ -321,7 +312,7 @@ export async function buildAdsReport(since, until) {
     adsets: adsets.sort((a, b) => a.region.localeCompare(b.region) || b.spend - a.spend),
     regions,
     regionOrder: Object.keys(REGIONS),
-    excluded: { renewals: salesRes.renewals, trialFirstPayments: salesRes.trialFirstPayments },
+    links: { direct: DIRECT_LINK, trial: TRIAL_LINK },
     warnings,
     builtAt: new Date().toISOString(),
   };

@@ -248,7 +248,7 @@ function render(data) {
 
   document.getElementById('metrics').innerHTML = [
     ['Spend', money(tot.spend), 'Meta, this campaign'],
-    ['€39 sales', fmt(tot.sales), 'first-time €39 payments, all countries'],
+    ['€39 sales', fmt(tot.sales), '€39 payment link, all countries'],
     ['Trials started', fmt(tot.trials), `${fmt(tot.inTrial)} still in trial`],
     ['Paid trials', fmt(tot.paidTrials), tot.trials ? `${Math.round(100 * tot.paidTrials / tot.trials)}% of trials` : ''],
     ['Cost per paying customer', money(adPaying && tot.spend ? tot.spend / adPaying : null), `${fmt(adPaying)} paying customers in ad countries`],
@@ -285,9 +285,9 @@ function render(data) {
     'Spend and Meta purchases come from Meta. Meta purchases are Meta\'s own count and are not used anywhere else on this page. ' +
     'Everything else comes from the main Stripe account ("Mr. Vig - Kartra"), split by the country of the card used: ' +
     'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (the A/B test) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY.<br>' +
-    '<strong>€39 sales</strong>: paid €39 payments in the date range that were the customer\'s first €39 payment, not counting the first payment after a free trial. ' +
-    `Left out: ${fmt(data.excluded?.renewals || 0)} renewals and ${fmt(data.excluded?.trialFirstPayments || 0)} first payments after a trial.<br>` +
-    '<strong>Trials</strong>: €39 subscriptions whose free trial started in the date range (one per customer). ' +
+    `Only two Stripe payment links count; every other €39 payment and trial is ignored. ` +
+    `<strong>€39 sales</strong>: paid checkouts of the €39 link (${esc(data.links?.direct || '')}) in the date range, one per customer.<br>` +
+    `<strong>Trials</strong>: checkouts of the free-trial link (${esc(data.links?.trial || '')}) in the date range, one per customer. ` +
     '<strong>Paid trials</strong>: of those, the ones whose first €39 invoice was paid, even if that was after the end date. ' +
     '<strong>Still in trial</strong>: trial not over yet.<br>' +
     '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + paid trials). The total leaves out "Other countries", since no ad set targets them.';

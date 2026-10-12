@@ -56,7 +56,7 @@ See `.env.example`. Required ones:
 
 | Var | Source |
 |---|---|
-| `STRIPE_KEY` | Main Stripe account. Stripe dashboard → Developers → API keys → Create restricted key (Read for Charges, Customers, Invoices, Subscriptions, Products) |
+| `STRIPE_KEY` | Main Stripe account. Stripe dashboard → Developers → API keys → Create restricted key (Read for Charges, Customers, Invoices, Subscriptions, Products, Checkout Sessions) |
 | `STRIPE_THRIVECART_KEY` | ThriveCart's Stripe account, same steps (Read for Subscriptions, Customers; Products optional). Used by the members page. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase console → Project settings → Service accounts → Generate new private key. Paste the entire JSON as a single-line string. |
 | `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID` | Firebase console → Project settings → "Your apps" → Web app config |
@@ -156,10 +156,12 @@ For each Meta ad set in the campaign "Atomic Homework September 2026" (ad accoun
 |---|---|
 | Spend | Meta Ads API |
 | Meta purchases | Meta's own purchase count. Shown only; never counted as sales. |
-| €39 sales | Main Stripe account ("Mr. Vig - Kartra"): paid €39 payments in the range that are the customer's first €39 payment, not counting renewals or the first payment after a free trial |
-| Trials | €39 subscriptions whose free trial started in the range, one per customer |
+| €39 sales | Main Stripe account ("Mr. Vig - Kartra"): paid checkouts of the €39 payment link `plink_1TAh4gBRJTRkwDOLrKOnTE5R` in the range, one per customer |
+| Trials | Checkouts of the free-trial payment link `plink_1UPnBuBRJTRkwDOL5OuauwiB` in the range, one per customer |
 | Paid trials | Trials whose first €39 invoice was paid (even after the end date) |
 | Cost per paying customer | Spend ÷ (€39 sales + paid trials) |
+
+Only those two payment links count; every other €39 payment and trial is ignored. `STRIPE_KEY` needs **Checkout Sessions: Read** for this.
 
 Stripe numbers are split by card country: BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA = the Eastern Europe A/B test; DE, AT, CH, NL, BE, FR, LU = the W_EUROPE ad set; ES, PT, IT, GR, CY = the S_EUROPE ad set. Ad sets are matched by name (containing `W_EUROPE` or `S_EUROPE`; every other ad set in the campaign is the A/B test). Stripe can't tell the A/B test ad sets apart, so their Stripe numbers are shown together.
 
