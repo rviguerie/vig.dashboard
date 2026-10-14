@@ -167,6 +167,20 @@ td.meta{color:#6b7280}
     </div>
     <p class="note" id="d-note"></p>
   </div>
+  <div class="section" id="ab-section" style="display:none">
+    <div class="section-title">Upsell A/B test · A = free trial, long video (#15) · B = €39, short video (#14)</div>
+    <div class="chart-card table-wrap">
+      <table>
+        <thead><tr>
+          <th>Version / ad set</th><th>Spend</th><th>Revenue<br>so far</th><th>ROAS</th><th>Meta purchases<br>(not counted)</th>
+          <th>Dictionary orders<br>(€7)</th><th>Order bumps<br>(€9)</th><th>Upsells<br>(trial or paid)</th><th>Upsell paid</th><th>Still in trial</th>
+          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer</th>
+        </tr></thead>
+        <tbody id="ab-tbody"></tbody>
+      </table>
+    </div>
+    <p class="note" id="ab-note"></p>
+  </div>
 </div>
 
 <script src="/firebase-config.js"></script>
@@ -336,6 +350,7 @@ function render(data) {
     '<strong>Still in trial</strong>: trial not over yet.<br>' +
     '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + paid trials). The total leaves out "Other countries", since no ad set targets them.';
   renderDictionary(data.dictionary);
+  renderAbTest(data.dictionary?.abTest);
   document.getElementById('page').style.display = 'block';
 }
 
@@ -416,6 +431,31 @@ function renderDictionary(d) {
     '<strong>Upsells</strong> percentage = upsells ÷ dictionary orders. ' +
     '<strong>Revenue per buyer</strong> = (€7 dictionary + €9 bumps + upsell payments so far) ÷ dictionary orders.' +
     (currency === 'USD' ? ` Stripe amounts are in euros and converted to dollars at EUR/USD ${rate()}, set at the top (same default as the dashboard). Spend and cost per buyer are in dollars, as Meta reports them.` : '');
+}
+
+function renderAbTest(ab) {
+  const sec = document.getElementById('ab-section');
+  if (!ab || !ab.active) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  const pct = (n, st) => st.orders ? ` <span class="zero">(${Math.round(100 * n / st.orders)}%)</span>` : '';
+  const row = (cls, name, spend, meta, st) =>
+    `<tr class="${cls}"><td>${name}</td><td>${money(spend)}</td><td>${revenueUsd(st.revenueCents / 100)}</td><td>${roas(st.revenueCents / 100, spend)}</td>` +
+    `<td class="meta">${fmt(meta)}</td>${num(st.orders)}<td>${fmt(st.withBump)}${pct(st.withBump, st)}</td>` +
+    `<td>${fmt(st.upsellTrials)}${pct(st.upsellTrials, st)}</td><td>${fmt(st.upsellPaid)}${pct(st.upsellPaid, st)}</td>${num(st.upsellInTrial)}` +
+    `<td>${money(st.costPerBuyer)}</td><td>${revenueUsd(st.revenuePerBuyer)}</td></tr>`;
+  let rows = '';
+  for (const v of ab.versions) {
+    rows += row('group', `<strong>${esc(v.label)}</strong>`, v.spend, v.metaPurchases, v.stats);
+    for (const a of v.adsets) rows += row('adset', esc(a.name), a.spend, a.metaPurchases, a.stats);
+  }
+  document.getElementById('ab-tbody').innerHTML = rows;
+  document.getElementById('ab-note').innerHTML =
+    'Orders are split by the ThriveCart product on each payment: #15 = version A, #14 = version B. ' +
+    'The bold row is the whole version (all its orders, any country, and the spend of its "Test A/B" ad sets). ' +
+    'Ad set rows: that version\'s orders from the countries the ad set targets. ' +
+    '<strong>Upsells</strong>: Atomic Homework sold through ThriveCart to the dictionary buyer (trial or paid). ' +
+    '<strong>Upsell paid</strong>: at least one payment went through (version B charges €39 at once; version A only after the 7-day trial). ' +
+    'Percentages are of dictionary orders.';
 }
 
 document.getElementById('refresh-btn').addEventListener('click', () => load(true));
