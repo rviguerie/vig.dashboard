@@ -20,6 +20,12 @@
  * All Stripe amounts are in euros.
  * Charges whose description names another product are ignored.
  *
+ * Upsell A/B test: ThriveCart puts the product number on each payment
+ * (payment_intent.metadata.thrivecart_product_id). Orders from product #15
+ * belong to test version A (free trial, long video), #14 to version B (€39,
+ * short video). Ad sets named "Test A …" / "Test B …" supply the spend; within
+ * a version, orders go to an ad set by card country.
+ *
  * Sales go to an ad set by card country. Only ad sets with spend in the chosen
  * dates are used; ad sets with no spend are left out. Ad sets targeting exactly the same
  * countries form one group (Stripe can't tell them apart). A country targeted
@@ -39,6 +45,18 @@ const BUMP_WINDOW = 2 * 3600;
 const OTHER_PRODUCT = /atomic homework|awd upsell|vig village|vitamin v|speaking school/i;
 const NOT_UPSELL = /dictionary|vig village|vitamin v|speaking school/i; // ThriveCart sales that aren't the Atomic Homework upsell
 const UPSELL_WINDOW = 2 * 3600; // ThriveCart upsell subscription starts within 2 hours of the dictionary order
+
+// Upsell A/B test: ThriveCart product number → test version.
+const AB_VERSIONS = [
+  { version: 'A', product: '15', label: 'A · free trial, long video (ThriveCart #15)' },
+  { version: 'B', product: '14', label: 'B · €39, short video (ThriveCart #14)' },
+];
+const AB_ADSET = /^\s*test\s+([ab])\b/i;
+
+const productOf = (c) => {
+  const pi = typeof c.payment_intent === 'object' && c.payment_intent ? c.payment_intent : null;
+  return String(pi?.metadata?.thrivecart_product_id || c.metadata?.thrivecart_product_id || '');
+};
 
 const ACCOUNTS = [
   { id: 'main', env: 'STRIPE_KEY', label: 'Main account (STRIPE_KEY)' },
@@ -81,6 +99,7 @@ async function dictionaryOrders(account, key, from, to, raw) {
       created: c.created,
       ident: custIdent(c),
       country: c.payment_method_details?.card?.country || c.billing_details?.address?.country || '',
+      product: productOf(c),
     };
     if (c.amount === DICT_CENTS || c.amount === BOTH_CENTS) {
       if (c.created < to) orders.push({ ...row, bump: c.amount === BOTH_CENTS });
@@ -97,7 +116,7 @@ async function dictionaryOrders(account, key, from, to, raw) {
 
 async function listCharges(key, from, until) {
   return stripeList('/charges', [
-    ['created[gte]', String(from)], ['created[lt]', String(until)], ['expand[]', 'data.customer'],
+    ['created[gte]', String(from)], ['created[lt]', String(until)], ['expand[]', 'data.customer'], ['expand[]', 'data.payment_intent'],
   ], key);
 }
 
@@ -167,6 +186,45 @@ function finish(st, spend) {
   st.costPerBuyer = st.orders && spend ? spend / st.orders : null;
   st.revenuePerBuyer = st.orders ? st.revenueCents / 100 / st.orders : null;
   return st;
+}
+
+/** Adds one order (with its ThriveCart upsell, if any) to a stats object. */
+function addOrder(st, o) {
+  st.orders++;
+  st.dictCents += DICT_CENTS;
+  if (o.bump) { st.withBump++; st.bumpCents += BUMP_CENTS; }
+  if (o.country) st.countries[o.country] = (st.countries[o.country] || 0) + 1;
+  const u = o.upsell;
+  if (u) {
+    st.upsellTrials++;
+    if (u.paid) st.upsellPaid++;
+    else if (u.inTrial) st.upsellInTrial++;
+    st.upsellCents += u.cents;
+  }
+}
+
+/**
+ * Upsell A/B test: orders split by ThriveCart product (#15 = A, #14 = B).
+ * Each version lists its "Test A/B …" ad sets (spend, and orders from their
+ * countries) and a version total (all orders of that product, any country).
+ */
+export function buildAbTest(adsets, orders) {
+  const versions = AB_VERSIONS.map((v) => {
+    const mine = orders.filter((o) => o.product === v.product);
+    const sets = adsets
+      .filter((a) => (AB_ADSET.exec(a.name)?.[1] || '').toUpperCase() === v.version)
+      .map((a) => {
+        const st = emptyStats();
+        for (const o of mine) if (a.countries.includes((o.country || '').toUpperCase())) addOrder(st, o);
+        return { id: a.id, name: a.name, countries: a.countries, spend: a.spend, metaPurchases: a.metaPurchases, stats: finish(st, a.spend) };
+      })
+      .sort((x, y) => x.name.localeCompare(y.name));
+    const total = emptyStats();
+    for (const o of mine) addOrder(total, o);
+    const spend = sets.reduce((t, a) => t + a.spend, 0);
+    return { ...v, adsets: sets, spend, metaPurchases: sets.reduce((t, a) => t + a.metaPurchases, 0), stats: finish(total, spend) };
+  });
+  return { versions, active: versions.some((v) => v.adsets.length || v.stats.orders) };
 }
 
 /** The dictionary campaign section. `from`/`to` are unix seconds in the ad account's time zone. */
@@ -270,6 +328,7 @@ export async function buildDictionarySection(since, until, from, to, hasMeta) {
       const ups = await thrivecartUpsells(tcKey, tcCharges, allOrders, from, to);
       src.thrivecartUpsells = ups.size;
       for (const [o, u] of ups) {
+        o.upsell = u;
         const st = bucketOf(o.country);
         st.upsellTrials++;
         if (u.paid) st.upsellPaid++;
@@ -295,6 +354,7 @@ export async function buildDictionarySection(since, until, from, to, hasMeta) {
   total.costPerBuyer = targetedOrders && spend ? spend / targetedOrders : null;
   return {
     campaign: DICT_CAMPAIGN,
+    abTest: buildAbTest(adsets, allOrders),
     upsellLink: UPSELL_LINK,
     groups: groupList,
     overlap: { ...overlap, stats: finish(overlap.stats, 0) },
