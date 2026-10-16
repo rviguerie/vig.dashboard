@@ -277,10 +277,12 @@ export function buildMembers() {
 }
 
 /**
- * Dictionary buyers who became paying Atomic Homework members after their
- * first dictionary purchase: Map(ident → { bought, joined, source, cents }),
- * `cents` = everything they have paid for Atomic Homework so far (net of
- * refunds). Server-side only (keys are emails).
+ * Dictionary buyers who started Atomic Homework after their first dictionary
+ * purchase: Map(ident → { bought, joined, source, paid, cents }).
+ * paid: true = paying member (`joined` = sign-up); false = started a
+ * subscription (free trial) but has not paid yet, or cancelled before paying
+ * (`joined` = subscription start). `cents` = everything paid for Atomic
+ * Homework so far (net of refunds). Server-side only (keys are emails).
  */
 export function dictionaryBuyerSales() {
   return analyse().buyers;
@@ -336,10 +338,13 @@ function analyse() {
     members.push({ date, account: 'thrivecart', source: 'dictionary_ad_upsell', via: 'stripe' });
     noteJoin(id, date, 'dictionary_ad_upsell');
   }
+  const allSubs = new Map();    // ident → [subs], both accounts
   for (const s of subs) {
-    if (s.account !== 'main') continue;
     const id = identOf(s.customer_email, s.customer_id);
     if (!id) continue;
+    if (!allSubs.has(id)) allSubs.set(id, []);
+    allSubs.get(id).push(s);
+    if (s.account !== 'main') continue;
     if (!mainSubs.has(id)) mainSubs.set(id, []);
     mainSubs.get(id).push(s);
   }
@@ -388,9 +393,18 @@ function analyse() {
     if (!j) dictionary.push({ bought });
     else if (j.date >= bought - 300) {
       dictionary.push({ bought, joined: j.date, source: j.source });
-      buyers.set(id, { bought, joined: j.date, source: j.source, cents: ahCents.get(id) || 0 });
+      buyers.set(id, { bought, joined: j.date, source: j.source, paid: true, cents: ahCents.get(id) || 0 });
     }
     else dictionary.push({ bought, already: true });
+    if (j) continue;
+    // Not a paying member: their first Atomic Homework subscription (free trial) after the dictionary, if any.
+    const sub = (allSubs.get(id) || []).filter((s) => s.start >= bought - 300).sort((a, b) => a.start - b.start)[0];
+    if (!sub) continue;
+    let source;
+    if (sub.account === 'thrivecart' || sub.awd_upsell || sub.start - bought <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
+    else if (sub.start - bought <= UPSELL_SEQ_WINDOW) source = 'upsell_email';
+    else source = 'daily_email';
+    buyers.set(id, { bought, joined: sub.start, source, paid: false, cents: 0 });
   }
   dictionary.sort((a, b) => a.bought - b.bought);
   return {
