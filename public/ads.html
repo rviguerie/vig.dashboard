@@ -192,7 +192,7 @@ td.meta{color:#374151}
       <table>
         <thead><tr>
           <th>Version / ad set</th><th>Spend</th><th>Revenue<br>so far</th><th>ROAS</th><th>Meta purchases<br>(not counted)</th>
-          <th>Dictionary orders<br>(€7)</th><th>Order bumps<br>(€9)</th><th>Upsells<br>(trial or paid)</th><th>Upsell paid</th><th>Still in trial</th>
+          <th>Dictionary orders<br>(€7)</th><th>Order bumps<br>(€9)</th><th>Upsells<br>(trial or paid)</th><th>Upsell paid</th><th>Upsell trial<br>(not paid)</th>
           <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer</th>
         </tr></thead>
         <tbody id="ab-tbody"></tbody>
@@ -411,7 +411,7 @@ function renderDictionary(d) {
     ['ROAS', roas(targetedRev, d.total.spend), 'revenue ÷ spend, targeted countries'],
     ['Dictionary orders', fmt(t.orders), 'all countries'],
     ['Order bumps', fmt(t.withBump), t.orders ? `${Math.round(100 * t.bumpPct)}% of orders` : ''],
-    ['Upsells', fmt(t.upsellTrials), `${t.orders ? Math.round(100 * t.upsellTrials / t.orders) + '% of orders · ' : ''}${fmt(t.upsellPaid)} paid · ${fmt(t.upsellInTrial)} still in trial`],
+    ['Upsells', fmt(t.upsellTrials), `${t.orders ? Math.round(100 * t.upsellTrials / t.orders) + '% of orders · ' : ''}${fmt(t.upsellPaid)} paid · ${fmt(t.upsellInTrial)} trial`],
     ['Cost per dictionary buyer', money(t.costPerBuyer), 'buyers in targeted countries'],
     ['Revenue per buyer', currency === 'EUR' ? euro(t.revenuePerBuyer) : (t.revenuePerBuyer == null ? '—' : usd(t.revenuePerBuyer)), currency === 'EUR' ? 'per dictionary order' : `${euro(t.revenuePerBuyer)} per dictionary order`],
     ['Meta purchases', fmt(d.total.metaPurchases), 'Meta\'s own count · not used'],
@@ -449,16 +449,15 @@ function renderDictionary(d) {
   const found = d.sources.map((s) => {
     if (!s.configured) return `${esc(s.label)}: not set`;
     if (s.error) return `${esc(s.label)}: could not read`;
-    return `${esc(s.label)}: <strong>${fmt(s.orders)}</strong> dictionary orders (${fmt(s.withBump)} with bump), ${fmt(s.upsellTrials)} upsell trials from the payment link` +
-      (s.account === 'thrivecart' ? `, ${fmt(s.thrivecartUpsells)} Atomic Homework upsells to dictionary buyers` : '') +
+    return `${esc(s.label)}: <strong>${fmt(s.orders)}</strong> dictionary orders (${fmt(s.withBump)} with bump)` +
       (s.unmatchedBumps ? `, ${fmt(s.unmatchedBumps)} €9 bumps with no dictionary order (not counted)` : '');
   }).join(' · ');
   document.getElementById('d-note').innerHTML =
     `<strong>Where the sales were found</strong>: ${found}.<br>` +
     'Both Stripe accounts are checked. <strong>Dictionary order</strong>: a paid €7 charge, or €16 (dictionary + bump in one charge). ' +
     '<strong>Order bump</strong>: the €16 charge, or a €9 charge by the same customer within 2 hours of a €7 charge. ' +
-    `<strong>Upsells</strong>: checkouts of ${esc(d.upsellLink)} (one per customer), plus Atomic Homework sold through ThriveCart to a dictionary buyer (same email: a ThriveCart subscription started within 2 hours of the order, or any non-dictionary ThriveCart payment since). ` +
-    '<strong>Upsell paid</strong>: at least one payment went through.<br>' +
+    '<strong>Upsells</strong>: dictionary buyers who started Atomic Homework after their first dictionary purchase, in either Stripe account (same count as "Sales by source" and the members page), one per buyer. ' +
+    '<strong>Upsell paid</strong>: paid at least once; the rest are trials that have not paid (yet).<br>' +
     'Sales go to an ad set by the card\'s country, using the countries each ad set targets in Meta. Only ad sets with spend in the chosen dates are used; ad sets with no spend are left out. Ad sets targeting exactly the same countries are shown as one group. ' +
     '<strong>Cost per dictionary buyer</strong> = spend ÷ dictionary orders (the total leaves out untargeted countries). ' +
     '<strong>Revenue so far</strong> = €7 dictionary + €9 bumps + upsell payments so far, shown in dollars with euros in brackets. <strong>ROAS</strong> = revenue in dollars ÷ spend (the total leaves out untargeted countries). ' +
@@ -487,8 +486,8 @@ function renderAbTest(ab) {
     'Orders are split by the ThriveCart product on each payment: #15 = version A, #14 = version B. ' +
     'The bold row is the whole version (all its orders, any country, and the spend of its "Test A/B" ad sets). ' +
     'Ad set rows: that version\'s orders from the countries the ad set targets. ' +
-    '<strong>Upsells</strong>: Atomic Homework sold through ThriveCart to the dictionary buyer (trial or paid). ' +
-    '<strong>Upsell paid</strong>: at least one payment went through (version B charges €39 at once; version A only after the 7-day trial). ' +
+    '<strong>Upsells</strong>: the dictionary buyer started Atomic Homework (trial or paid), same count as "Sales by source". ' +
+    '<strong>Upsell paid</strong>: paid at least once (version B charges €39 at once; version A only after the 7-day trial). <strong>Upsell trial</strong>: started but not paid (yet). ' +
     'Percentages are of dictionary orders.';
 }
 

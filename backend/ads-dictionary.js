@@ -9,21 +9,18 @@
  *   Dictionary order  a paid €7 charge, or €16 (dictionary + order bump in one charge)
  *   Order bump        €16 charge, or a separate €9 charge by the same customer
  *                     within 2 hours of a €7 dictionary charge
- *   Upsell trials     completed checkouts of UPSELL_LINK (one per customer);
- *                     "paid" = its first non-zero invoice was paid
- *   Upsell revenue    everything paid so far on those subscriptions
- *   ThriveCart upsell Atomic Homework sold through ThriveCart to a dictionary
- *                     buyer (same email): a ThriveCart subscription started
- *                     within 2 hours of the order, or any non-dictionary
- *                     ThriveCart charge since the order. Counted as an upsell
- *                     of that buyer, with everything paid so far as revenue.
- * Atomic Homework by source: for the dictionary buyers in the date range, their
- *                   Atomic Homework membership as the members page sorts it
- *                   (charges ledger, timed from the first dictionary purchase):
- *                   upsell page (ThriveCart, "AWD Upsell" or ≤1 hour), upsell
- *                   sequence (1 hour – 6 days), daily emails (> 6 days). Count
- *                   of paying buyers, of buyers in a trial that hasn't paid
- *                   (yet), and everything they have paid for it so far.
+ *   Upsell            the dictionary buyer started Atomic Homework after their
+ *                     first dictionary purchase, as the members page sees it
+ *                     (members.js dictionaryBuyerSales: charges ledger + saved
+ *                     subscriptions). "paid" = paid at least once; otherwise a
+ *                     trial that hasn't paid (yet). Revenue = everything paid
+ *                     for Atomic Homework so far. One upsell per buyer (email).
+ *                     The same data feeds the totals, the ad set rows, the A/B
+ *                     test and "Sales by source", so they always agree.
+ * Sales by source:  those upsells split as the members page sorts them (timed
+ *                   from the first dictionary purchase): upsell page
+ *                   (ThriveCart, "AWD Upsell" or ≤1 hour), upsell sequence
+ *                   (1 hour – 6 days), daily emails (> 6 days).
  * All Stripe amounts are in euros.
  * Charges whose description names another product are ignored.
  *
@@ -40,19 +37,16 @@
  */
 
 import {
-  AD_ACCOUNT, metaAll, metaInsights, stripeList, linkCheckouts, sessionIdent, identOf, trialOutcome, pool,
+  AD_ACCOUNT, metaAll, metaInsights, stripeList, identOf,
 } from './ads.js';
 import { dictionaryBuyerSales } from './members.js';
 
 export const DICT_CAMPAIGN = 'Atomic Dictionary - Cold - Ad Tests';
-const UPSELL_LINK = 'plink_1U9NdTBRJTRkwDOL24SVW02T';
 const DICT_CENTS = 700;
 const BUMP_CENTS = 900;
 const BOTH_CENTS = DICT_CENTS + BUMP_CENTS;
 const BUMP_WINDOW = 2 * 3600;
 const OTHER_PRODUCT = /atomic homework|awd upsell|vig village|vitamin v|speaking school/i;
-const NOT_UPSELL = /dictionary|vig village|vitamin v|speaking school/i; // ThriveCart sales that aren't the Atomic Homework upsell
-const UPSELL_WINDOW = 2 * 3600; // ThriveCart upsell subscription starts within 2 hours of the dictionary order
 
 // Upsell A/B test: ThriveCart product number → test version.
 const AB_VERSIONS = [
@@ -136,73 +130,33 @@ async function listCharges(key, from, until) {
 }
 
 /**
- * Atomic Homework upsells sold through ThriveCart, matched to dictionary
- * buyers by email. Every ThriveCart sale that isn't the dictionary or the bump
- * is the Atomic Homework upsell. For each order: a ThriveCart subscription
- * started within UPSELL_WINDOW of the order, or any upsell charge since the
- * order. Revenue = everything the buyer has paid for it so far.
- * Returns Map(order → { paid, inTrial, cents }).
+ * Sets o.upsell = { paid, inTrial, cents, source } on each order whose buyer
+ * started Atomic Homework after the dictionary (first order per buyer only).
+ * Returns the number of distinct buyers.
  */
-async function thrivecartUpsells(key, charges, orders, from, to) {
-  const subs = await stripeList('/subscriptions', [
-    ['status', 'all'], ['created[gte]', String(from)], ['created[lt]', String(to + UPSELL_WINDOW)], ['expand[]', 'data.customer'],
-  ], key);
-  const upsellCharges = charges.filter((c) => c.status === 'succeeded' && c.paid &&
-    (c.amount || 0) > (c.amount_refunded || 0) && (c.currency || '').toLowerCase() === 'eur' &&
-    ![DICT_CENTS, BUMP_CENTS, BOTH_CENTS].includes(c.amount) && !NOT_UPSELL.test(c.description || ''));
-  const out = new Map();
-  const usedCharges = new Set();
-  const usedSubs = new Set();
-  const now = Date.now() / 1000;
-  for (const o of [...orders].sort((a, b) => a.created - b.created)) {
-    if (!o.ident) continue;
-    const mine = upsellCharges.filter((c) => !usedCharges.has(c.id) && custIdent(c) === o.ident && c.created >= o.created - 300);
-    const sub = subs.find((s) => !usedSubs.has(s.id) && custIdent(s) === o.ident &&
-      s.created >= o.created - 300 && s.created <= o.created + UPSELL_WINDOW);
-    if (!mine.length && !sub) continue;
-    mine.forEach((c) => usedCharges.add(c.id));
-    if (sub) usedSubs.add(sub.id);
-    const cents = mine.reduce((t, c) => t + c.amount - (c.amount_refunded || 0), 0);
-    const inTrial = !mine.length && sub.status === 'trialing' && sub.trial_end > now;
-    out.set(o, { paid: mine.length > 0, inTrial, cents });
-  }
-  return out;
-}
-
-/** Upsell trials from UPSELL_LINK, one per customer, with outcome and paid amount. */
-async function upsellTrials(key, from, to) {
-  const raw = await linkCheckouts(UPSELL_LINK, from, to, [
-    'data.subscription.default_payment_method',
-    'data.customer.invoice_settings.default_payment_method',
-  ], key);
-  const seen = new Set();
-  const subs = [];
-  for (const cs of raw) {
-    const s = typeof cs.subscription === 'object' && cs.subscription ? cs.subscription : null;
-    if (!s) continue;
-    const id = sessionIdent(cs);
-    if (id && seen.has(id)) continue;
-    if (id) seen.add(id);
-    subs.push({ cs, s });
-  }
-  return pool(subs, 5, ({ cs, s }) => trialOutcome(cs, s, 1, key));
-}
-
-/** Dictionary buyers in these orders who started Atomic Homework (paid or trial), split by source. */
-function homeworkBySource(orders) {
-  const out = Object.fromEntries(HOMEWORK_SOURCES.map((s) => [s.key, { label: s.label, buyers: 0, paid: 0, trials: 0, cents: 0 }]));
+function attachUpsells(orders) {
   const buyers = dictionaryBuyerSales();
   const seen = new Set();
-  for (const o of orders) {
+  for (const o of [...orders].sort((a, b) => a.created - b.created)) {
     if (!o.ident || seen.has(o.ident)) continue;
     seen.add(o.ident);
     const b = buyers.get(o.ident);
-    if (!b || !out[b.source]) continue;
-    out[b.source].buyers++;
-    if (b.paid) out[b.source].paid++; else out[b.source].trials++;
-    out[b.source].cents += b.cents;
+    if (b) o.upsell = { paid: b.paid, inTrial: !b.paid, cents: b.cents, source: b.source };
   }
-  return { buyers: seen.size, sources: HOMEWORK_SOURCES.map((s) => ({ key: s.key, ...out[s.key] })) };
+  return seen.size;
+}
+
+/** Those upsells split by source. */
+function homeworkBySource(orders, buyerCount) {
+  const out = Object.fromEntries(HOMEWORK_SOURCES.map((s) => [s.key, { label: s.label, buyers: 0, paid: 0, trials: 0, cents: 0 }]));
+  for (const o of orders) {
+    const u = o.upsell;
+    if (!u || !out[u.source]) continue;
+    out[u.source].buyers++;
+    if (u.paid) out[u.source].paid++; else out[u.source].trials++;
+    out[u.source].cents += u.cents;
+  }
+  return { buyers: buyerCount, sources: HOMEWORK_SOURCES.map((s) => ({ key: s.key, ...out[s.key] })) };
 }
 
 // ─── Report ──────────────────────────────────────────────────────────
@@ -306,17 +260,13 @@ export async function buildDictionarySection(since, until, from, to, hasMeta) {
   // Stripe: both accounts.
   const sources = [];
   const allOrders = [];
-  let tcCharges = null;
   for (const acct of ACCOUNTS) {
     const key = process.env[acct.env];
-    const src = { account: acct.id, label: acct.label, configured: !!key, orders: 0, withBump: 0, unmatchedBumps: 0, upsellTrials: 0, thrivecartUpsells: 0 };
+    const src = { account: acct.id, label: acct.label, configured: !!key, orders: 0, withBump: 0, unmatchedBumps: 0 };
     sources.push(src);
     if (!key) continue;
     try {
-      // ThriveCart charges are read up to now, so later upsell payments count as revenue.
-      const isTc = acct.id === 'thrivecart';
-      const raw = await listCharges(key, from, isTc ? Math.ceil(Date.now() / 1000) + 60 : to + BUMP_WINDOW);
-      if (isTc) tcCharges = raw;
+      const raw = await listCharges(key, from, to + BUMP_WINDOW);
       const { orders, unmatchedBumps } = await dictionaryOrders(acct.id, key, from, to, raw);
       allOrders.push(...orders);
       src.orders = orders.length;
@@ -333,43 +283,17 @@ export async function buildDictionarySection(since, until, from, to, hasMeta) {
       src.error = err.message;
       warnings.push(`${acct.label}: could not read charges: ${err.message}`);
     }
-    try {
-      const trials = await upsellTrials(key, from, to);
-      src.upsellTrials = trials.length;
-      for (const t of trials) {
-        const st = bucketOf(t.country);
-        st.upsellTrials++;
-        if (t.state === 'paid') st.upsellPaid++;
-        else if (t.state === 'in_trial') st.upsellInTrial++;
-        st.upsellCents += t.paidCents;
-      }
-    } catch (err) {
-      // A payment link only exists in one account; the other one answers "no such link".
-      if (!/payment_link|No such/i.test(err.message)) {
-        src.upsellError = err.message;
-        warnings.push(`${acct.label}: could not read upsell checkouts: ${err.message}`);
-      }
-    }
   }
 
-  // Atomic Homework upsells sold through ThriveCart, credited to the dictionary buyer.
-  const tcKey = process.env.STRIPE_THRIVECART_KEY;
-  if (tcKey && tcCharges) {
-    const src = sources.find((x) => x.account === 'thrivecart');
-    try {
-      const ups = await thrivecartUpsells(tcKey, tcCharges, allOrders, from, to);
-      src.thrivecartUpsells = ups.size;
-      for (const [o, u] of ups) {
-        o.upsell = u;
-        const st = bucketOf(o.country);
-        st.upsellTrials++;
-        if (u.paid) st.upsellPaid++;
-        else if (u.inTrial) st.upsellInTrial++;
-        st.upsellCents += u.cents;
-      }
-    } catch (err) {
-      warnings.push(`ThriveCart account: could not read upsells: ${err.message}`);
-    }
+  // Upsells: one per buyer, from the same data as "Sales by source".
+  const buyerCount = attachUpsells(allOrders);
+  for (const o of allOrders) {
+    const u = o.upsell;
+    if (!u) continue;
+    const st = bucketOf(o.country);
+    st.upsellTrials++;
+    if (u.paid) st.upsellPaid++; else st.upsellInTrial++;
+    st.upsellCents += u.cents;
   }
 
   const groupList = [...groups.values()]
@@ -387,8 +311,7 @@ export async function buildDictionarySection(since, until, from, to, hasMeta) {
   return {
     campaign: DICT_CAMPAIGN,
     abTest: buildAbTest(adsets, allOrders),
-    homework: homeworkBySource(allOrders),
-    upsellLink: UPSELL_LINK,
+    homework: homeworkBySource(allOrders, buyerCount),
     groups: groupList,
     overlap: { ...overlap, stats: finish(overlap.stats, 0) },
     other: { ...other, stats: finish(other.stats, 0) },
