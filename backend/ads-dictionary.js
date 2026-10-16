@@ -17,6 +17,12 @@
  *                     within 2 hours of the order, or any non-dictionary
  *                     ThriveCart charge since the order. Counted as an upsell
  *                     of that buyer, with everything paid so far as revenue.
+ * Atomic Homework by source: for the dictionary buyers in the date range, their
+ *                   Atomic Homework membership as the members page sorts it
+ *                   (charges ledger, timed from the first dictionary purchase):
+ *                   upsell page (ThriveCart, "AWD Upsell" or ≤1 hour), upsell
+ *                   sequence (1 hour – 6 days), daily emails (> 6 days). Count
+ *                   of buyers and everything they have paid for it so far.
  * All Stripe amounts are in euros.
  * Charges whose description names another product are ignored.
  *
@@ -35,6 +41,7 @@
 import {
   AD_ACCOUNT, metaAll, metaInsights, stripeList, linkCheckouts, sessionIdent, identOf, trialOutcome, pool,
 } from './ads.js';
+import { dictionaryBuyerSales } from './members.js';
 
 export const DICT_CAMPAIGN = 'Atomic Dictionary - Cold - Ad Tests';
 const UPSELL_LINK = 'plink_1U9NdTBRJTRkwDOL24SVW02T';
@@ -52,6 +59,13 @@ const AB_VERSIONS = [
   { version: 'B', product: '14', label: 'B · €39, short video (ThriveCart #14)' },
 ];
 const AB_ADSET = /^\s*test\s+([ab])\b/i;
+
+// Atomic Homework sources for dictionary buyers (same keys as the members page).
+const HOMEWORK_SOURCES = [
+  { key: 'dictionary_ad_upsell', label: 'Upsell page' },
+  { key: 'upsell_email', label: 'Upsell sequence' },
+  { key: 'daily_email', label: 'Daily emails' },
+];
 
 const productOf = (c) => {
   const pi = typeof c.payment_intent === 'object' && c.payment_intent ? c.payment_intent : null;
@@ -171,6 +185,22 @@ async function upsellTrials(key, from, to) {
     subs.push({ cs, s });
   }
   return pool(subs, 5, ({ cs, s }) => trialOutcome(cs, s, 1, key));
+}
+
+/** Dictionary buyers in these orders who became Atomic Homework members, split by source. */
+function homeworkBySource(orders) {
+  const out = Object.fromEntries(HOMEWORK_SOURCES.map((s) => [s.key, { label: s.label, buyers: 0, cents: 0 }]));
+  const buyers = dictionaryBuyerSales();
+  const seen = new Set();
+  for (const o of orders) {
+    if (!o.ident || seen.has(o.ident)) continue;
+    seen.add(o.ident);
+    const b = buyers.get(o.ident);
+    if (!b || !out[b.source]) continue;
+    out[b.source].buyers++;
+    out[b.source].cents += b.cents;
+  }
+  return { buyers: seen.size, sources: HOMEWORK_SOURCES.map((s) => ({ key: s.key, ...out[s.key] })) };
 }
 
 // ─── Report ──────────────────────────────────────────────────────────
@@ -355,6 +385,7 @@ export async function buildDictionarySection(since, until, from, to, hasMeta) {
   return {
     campaign: DICT_CAMPAIGN,
     abTest: buildAbTest(adsets, allOrders),
+    homework: homeworkBySource(allOrders),
     upsellLink: UPSELL_LINK,
     groups: groupList,
     overlap: { ...overlap, stats: finish(overlap.stats, 0) },
