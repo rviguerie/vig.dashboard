@@ -22,7 +22,8 @@
  *                   (charges ledger, timed from the first dictionary purchase):
  *                   upsell page (ThriveCart, "AWD Upsell" or ≤1 hour), upsell
  *                   sequence (1 hour – 6 days), daily emails (> 6 days). Count
- *                   of buyers and everything they have paid for it so far.
+ *                   of paying buyers, of buyers in a trial that hasn't paid
+ *                   (yet), and everything they have paid for it so far.
  * All Stripe amounts are in euros.
  * Charges whose description names another product are ignored.
  *
@@ -187,9 +188,9 @@ async function upsellTrials(key, from, to) {
   return pool(subs, 5, ({ cs, s }) => trialOutcome(cs, s, 1, key));
 }
 
-/** Dictionary buyers in these orders who became Atomic Homework members, split by source. */
+/** Dictionary buyers in these orders who started Atomic Homework (paid or trial), split by source. */
 function homeworkBySource(orders) {
-  const out = Object.fromEntries(HOMEWORK_SOURCES.map((s) => [s.key, { label: s.label, buyers: 0, cents: 0 }]));
+  const out = Object.fromEntries(HOMEWORK_SOURCES.map((s) => [s.key, { label: s.label, buyers: 0, paid: 0, trials: 0, cents: 0 }]));
   const buyers = dictionaryBuyerSales();
   const seen = new Set();
   for (const o of orders) {
@@ -198,6 +199,7 @@ function homeworkBySource(orders) {
     const b = buyers.get(o.ident);
     if (!b || !out[b.source]) continue;
     out[b.source].buyers++;
+    if (b.paid) out[b.source].paid++; else out[b.source].trials++;
     out[b.source].cents += b.cents;
   }
   return { buyers: seen.size, sources: HOMEWORK_SOURCES.map((s) => ({ key: s.key, ...out[s.key] })) };

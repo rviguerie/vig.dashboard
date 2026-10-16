@@ -383,10 +383,12 @@ function renderDictionary(d) {
   const hw = d.homework || { buyers: 0, sources: [] };
   const eur = (cents) => currency === 'EUR' ? euro(cents / 100) : `${usd(cents / 100)} (${euro(cents / 100)})`;
   document.getElementById('d-homework').innerHTML = hw.sources.map((s) =>
-    `<div class="metric"><div class="metric-label">${esc(s.label)}</div><div class="metric-value">${fmt(s.buyers)}</div>` +
-    `<div class="metric-sub">${hw.buyers ? Math.round(100 * s.buyers / hw.buyers) + '% of buyers · ' : ''}${eur(s.cents)} paid so far</div></div>`).join('');
+    `<div class="metric"><div class="metric-label">${esc(s.label)}</div>` +
+    `<div class="metric-value">${fmt(s.paid)} paid · ${fmt(s.trials)} trial</div>` +
+    `<div class="metric-sub">${hw.buyers ? Math.round(100 * s.paid / hw.buyers) + '% paid · ' + Math.round(100 * s.trials / hw.buyers) + '% trial (of buyers) · ' : ''}${eur(s.cents)} paid so far</div></div>`).join('');
   document.getElementById('d-homework-note').innerHTML =
-    `Of the ${fmt(hw.buyers)} dictionary buyers in these dates, the ones who became paying Atomic Homework members, sorted by how long after their first dictionary purchase they joined (same as the members page): ` +
+    `Of the ${fmt(hw.buyers)} dictionary buyers in these dates, the ones who started Atomic Homework, sorted by how long after their first dictionary purchase they signed up (same as the members page). ` +
+    '<strong>Paid</strong> = has paid at least once. <strong>Trial</strong> = started a subscription (free trial) but has not paid yet, or cancelled before paying. ' +
     '<strong>Upsell page</strong> = bought through ThriveCart, the "AWD Upsell" price, or joined within 1 hour · ' +
     '<strong>Upsell sequence</strong> = joined between 1 hour and 6 days later (the Kartra upsell sequence runs 5 days) · ' +
     '<strong>Daily emails</strong> = joined more than 6 days later. ' +
