@@ -154,6 +154,11 @@ td.meta{color:#6b7280}
     <div class="metric-grid" id="d-metrics"></div>
   </div>
   <div class="section">
+    <div class="section-title">Atomic Dictionary - Cold - Ad Tests · Atomic Homework sales to these buyers, by source</div>
+    <div class="metric-grid" id="d-homework"></div>
+    <p class="note" id="d-homework-note"></p>
+  </div>
+  <div class="section">
     <div class="section-title">Atomic Dictionary - Cold - Ad Tests · by ad set</div>
     <div class="chart-card table-wrap">
       <table>
@@ -363,8 +368,21 @@ function renderDictionary(d) {
     document.getElementById('d-metrics').innerHTML = '';
     document.getElementById('d-tbody').innerHTML = '';
     document.getElementById('d-note').innerHTML = '';
+    document.getElementById('d-homework').innerHTML = '';
+    document.getElementById('d-homework-note').innerHTML = '';
     return;
   }
+  const hw = d.homework || { buyers: 0, sources: [] };
+  const eur = (cents) => currency === 'EUR' ? euro(cents / 100) : `${usd(cents / 100)} (${euro(cents / 100)})`;
+  document.getElementById('d-homework').innerHTML = hw.sources.map((s) =>
+    `<div class="metric"><div class="metric-label">${esc(s.label)}</div><div class="metric-value">${fmt(s.buyers)}</div>` +
+    `<div class="metric-sub">${hw.buyers ? Math.round(100 * s.buyers / hw.buyers) + '% of buyers · ' : ''}${eur(s.cents)} paid so far</div></div>`).join('');
+  document.getElementById('d-homework-note').innerHTML =
+    `Of the ${fmt(hw.buyers)} dictionary buyers in these dates, the ones who became paying Atomic Homework members, sorted by how long after their first dictionary purchase they joined (same as the members page): ` +
+    '<strong>Upsell page</strong> = bought through ThriveCart, the "AWD Upsell" price, or joined within 1 hour · ' +
+    '<strong>Upsell sequence</strong> = joined between 1 hour and 6 days later (the Kartra upsell sequence runs 5 days) · ' +
+    '<strong>Daily emails</strong> = joined more than 6 days later. ' +
+    'Revenue = everything they have paid for Atomic Homework so far, after refunds. Comes from the payments saved by the hourly refresh, so it can lag by up to an hour.';
   const t = d.total.stats;
   const pct = (st) => st.orders ? ` <span class="zero">(${Math.round(100 * st.bumpPct)}%)</span>` : '';
   const upPct = (st) => st.orders ? ` <span class="zero">(${Math.round(100 * st.upsellTrials / st.orders)}%)</span>` : '';

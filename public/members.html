@@ -271,9 +271,10 @@ function showWarnings(data) {
   box.style.display = w.length ? 'block' : 'none';
   const s = data.stats || {};
   document.getElementById('method-note').innerHTML =
-    'How sources are worked out: ThriveCart account members are all the dictionary-ad upsell. Main-account members (Stripe, Kartra and PayPal) who used a tagged checkout link get that link\'s source. ' +
-    'Everyone else, by their first payment: the "AWD Upsell" price, or joining within 1 hour of buying the Atomic Word Dictionary, is the dictionary-ad upsell; ' +
-    '€49 is the store; €29 is the launch promotion email; €39 after an earlier dictionary purchase is the upsell emails; €39 otherwise is the daily emails; any other price is "unknown". ' +
+    'How sources are worked out: ThriveCart account members are all the upsell page. ' +
+    'Main-account members (Stripe, Kartra and PayPal) who bought the Atomic Word Dictionary first are timed from their first dictionary purchase: the "AWD Upsell" price, or joining within 1 hour, is the upsell page; joining between 1 hour and 6 days later is the upsell sequence (it runs 5 days); later than that is the daily emails. ' +
+    'Other main-account members who used a tagged checkout link get that link\'s source. ' +
+    'Everyone else, by their first payment: the "AWD Upsell" price is the upsell page; €49 is the store; €29 is the launch promotion email; €39 is the daily emails; any other price is "unknown". ' +
     'Each person counts once per account, on the date they first joined. ' +
     `<br>Found: ${fmt(s.dictionaryBuyers || 0)} dictionary buyers · ${fmt(s.taggedMembers || 0)} members from tagged links · ${fmt(s.paypalMembers || 0)} members who first paid with PayPal · ` +
     `${fmt(s.mainSubs || 0)} main-account subscriptions · ${fmt(s.thrivecartSubs || 0)} ThriveCart subscriptions.`;
@@ -461,8 +462,8 @@ function renderDictionary(start, end) {
 }
 
 // ─── Tagged checkout links ───────────────────────────────────────────
-const LINK_LABELS = { store: 'Store', upsell_email: 'Upsell emails', daily_email: 'Daily emails' };
-const LINK_WHERE = { store: 'store page', upsell_email: 'upsell emails', daily_email: 'daily emails' };
+const LINK_LABELS = { store: 'Store', upsell_email: 'Upsell sequence', daily_email: 'Daily emails' };
+const LINK_WHERE = { store: 'store page', upsell_email: 'upsell sequence', daily_email: 'daily emails' };
 
 async function loadLinks() {
   const card = document.getElementById('links-card');
@@ -541,7 +542,7 @@ function renderLinks(data) {
   const btn = document.getElementById('make-links');
   if (btn) btn.addEventListener('click', async () => {
     const sources = [...card.querySelectorAll('.src-cb:checked')].map((c) => c.value);
-    if (!sources.length) { toast('Tick where the link is for (store, upsell emails or daily emails).', true); return; }
+    if (!sources.length) { toast('Tick where the link is for (store, upsell sequence or daily emails).', true); return; }
     btn.disabled = true; btn.textContent = 'Creating…';
     try {
       const res = await authFetch('/api/source-links', {

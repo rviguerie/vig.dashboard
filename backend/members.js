@@ -2,7 +2,7 @@
  * "Where members come from" — Atomic Homework member sources.
  *
  * Two Stripe accounts feed this:
- *   main        (STRIPE_KEY)             store, upsell emails, daily emails
+ *   main        (STRIPE_KEY)             store, upsell sequence, daily emails
  *   thrivecart  (STRIPE_THRIVECART_KEY)  every sale is the one-click upsell
  *                                        after the Atomic Word Dictionary ad
  *
@@ -13,17 +13,23 @@
  * Members count on their FIRST PAID payment (free trials cancelled before
  * paying are not members), one per customer (email, else customer ID):
  *
- *   thrivecart  every paying customer → 'dictionary_ad_upsell'
+ *   thrivecart  every paying customer → 'dictionary_ad_upsell' (upsell page)
  *   main        first paid Atomic Homework payment in the `charges` ledger
- *               (Stripe, Kartra-orchestrated and PayPal). Source, in order:
+ *               (Stripe, Kartra-orchestrated and PayPal).
+ *               Dictionary buyers (bought the Atomic Word Dictionary before
+ *               signing up), timed from their FIRST dictionary purchase:
+ *                 1. the "AWD Upsell" price, or signed up within 1 hour
+ *                    → 'dictionary_ad_upsell' (upsell page)
+ *                 2. signed up between 1 hour and 6 days later
+ *                    → 'upsell_email' (Kartra upsell sequence, runs 5 days)
+ *                 3. signed up more than 6 days later → 'daily_email'
+ *               Everyone else, in order:
  *                 1. the metadata.source tag on the subscription that payment
  *                    belongs to (tagged checkout links, see source-links.js)
- *                 2. the "AWD Upsell" price, or signing up within 1 hour of
- *                    buying the Atomic Word Dictionary → 'dictionary_ad_upsell'
+ *                 2. the "AWD Upsell" price → 'dictionary_ad_upsell'
  *                 3. first payment €49 → 'store', €29 → 'launch_promo'
- *                 4. dictionary bought earlier → 'upsell_email'
- *                 5. first payment €39 → 'daily_email'
- *                 6. anything else → 'store_or_daily' (unknown)
+ *                 4. first payment €39 → 'daily_email'
+ *                 5. anything else → 'store_or_daily' (unknown)
  */
 
 import { getDb } from './firebase.js';
@@ -34,7 +40,8 @@ const STRIPE_BASE = 'https://api.stripe.com/v1';
 const FIRESTORE_BATCH = 500;
 const MAX_PAGES = 1000;
 const SIGNUP_WINDOW = 10 * 86400;  // first payment can come up to 10 days after sign-up (7-day free trial)
-const UPSELL_PAGE_WINDOW = 3600;     // joined ≤1h after buying the dictionary = one-click upsell page
+const UPSELL_PAGE_WINDOW = 3600;     // joined ≤1h after the first dictionary purchase = one-click upsell page
+const UPSELL_SEQ_WINDOW = 6 * 86400; // joined ≤6 days after it = Kartra upsell sequence (runs 5 days); later = daily emails
 // Untagged members are sorted by the price of their first payment. Prices have
 // been stable: €49 only on the store, €39 in the emails, and €29 only in the
 // launch promotion email about a year ago.
@@ -45,11 +52,11 @@ const priceIs = (amount, p) => amount != null && Math.abs(amount - p) < 0.01;
 
 export const SOURCES = {
   store: 'Store',
-  upsell_email: 'Upsell emails',
+  upsell_email: 'Upsell sequence',
   daily_email: 'Daily emails',
   launch_promo: 'Launch promotion email (€29)',
   store_or_daily: 'Store or daily email (unknown)',
-  dictionary_ad_upsell: 'Dictionary ad upsell (one-click)',
+  dictionary_ad_upsell: 'Upsell page',
 };
 const TAGGABLE = new Set(['store', 'upsell_email', 'daily_email']);
 
@@ -70,6 +77,8 @@ const isAtomicHomework = (name) => /atomic\s*homework/i.test(name || '');
 // "AWD Upsell" at €39 is Atomic Homework sold as the dictionary one-click upsell.
 const isAwdUpsell = (name, amount) => /awd\s*upsell/i.test(name || '') && Math.abs((amount || 0) - 39) < 0.01;
 const isDictionary = (desc) => /atomic word dictionary|word dictionary/i.test(desc || '');
+// ThriveCart €7 dictionary, €9 order bump and €16 (both) are not Atomic Homework revenue.
+const isDictAmount = (amount) => [7, 9, 16].some((p) => priceIs(amount, p));
 
 // ─── Stripe helpers ──────────────────────────────────────────────────
 
@@ -263,6 +272,21 @@ const identOf = (email, customerId) => email || customerId || '';
  * as unix seconds (join date) — no emails leave the server.
  */
 export function buildMembers() {
+  const { buyers, ...out } = analyse();
+  return out;
+}
+
+/**
+ * Dictionary buyers who became paying Atomic Homework members after their
+ * first dictionary purchase: Map(ident → { bought, joined, source, cents }),
+ * `cents` = everything they have paid for Atomic Homework so far (net of
+ * refunds). Server-side only (keys are emails).
+ */
+export function dictionaryBuyerSales() {
+  return analyse().buyers;
+}
+
+function analyse() {
   const members = [];
   // Members are counted on their first paid Atomic Homework payment, so free
   // trials that are cancelled before paying are not counted.
@@ -273,6 +297,8 @@ export function buildMembers() {
   const joinAwd = new Set();    // idents whose first payment was the €39 "AWD Upsell"
   const mainSubs = new Map();   // ident → [subs]
   const dictBuys = new Map();   // ident → [dictionary purchase times]
+  const ahCents = new Map();    // ident → Atomic Homework paid so far (cents, net of refunds)
+  const addCents = (id, net) => ahCents.set(id, (ahCents.get(id) || 0) + Math.round(net * 100));
   for (const c of getCachedCharges()) {
     if (c.status !== 'Paid' && c.status !== 'Refunded') continue;
     const ts = parseInt(c.created, 10);
@@ -288,10 +314,12 @@ export function buildMembers() {
     if (c.channel === 'thrivecart') {
       // Every ThriveCart sale is the Atomic Homework upsell.
       if (!isDictionary(c.description) && (!tcJoin.has(id) || ts < tcJoin.get(id))) tcJoin.set(id, ts);
+      if (!isDictionary(c.description) && !isDictAmount(parseFloat(c.amount))) addCents(id, net);
       continue;
     }
     const awd = isAwdUpsell(c.description, parseFloat(c.amount) || 0);
     if (!(awd || isAtomicHomework(c.description))) continue;
+    addCents(id, net);
     if (!join.has(id) || ts < join.get(id)) {
       join.set(id, ts);
       joinVia.set(id, c.channel === 'paypal' ? 'paypal' : 'stripe');
@@ -327,14 +355,19 @@ export function buildMembers() {
     const signedUp = signup ? Math.min(signup.start, date) : date;
     const via = joinVia.get(id) || 'stripe';
     const amount = joinAmount.get(id);
-    const lastDict = Math.max(-Infinity, ...(dictBuys.get(id) || []).filter((t) => t <= signedUp));
+    // Dictionary buyers are timed from their first dictionary purchase (5 minutes' grace for clock order).
+    const firstDict = Math.min(Infinity, ...(dictBuys.get(id) || []));
+    const awd = joinAwd.has(id) || signup?.awd_upsell;
     let source;
-    if (signup && TAGGABLE.has(signup.source_tag)) { source = signup.source_tag; tagged++; }
-    else if (joinAwd.has(id) || signup?.awd_upsell) source = 'dictionary_ad_upsell';
-    else if (isFinite(lastDict) && signedUp - lastDict <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
+    if (firstDict <= signedUp + 300) {
+      if (awd || signedUp - firstDict <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
+      else if (signedUp - firstDict <= UPSELL_SEQ_WINDOW) source = 'upsell_email';
+      else source = 'daily_email';
+    }
+    else if (signup && TAGGABLE.has(signup.source_tag)) { source = signup.source_tag; tagged++; }
+    else if (awd) source = 'dictionary_ad_upsell';
     else if (priceIs(amount, STORE_PRICE)) source = 'store';
     else if (priceIs(amount, LAUNCH_PROMO_PRICE)) source = 'launch_promo';
-    else if (isFinite(lastDict)) source = 'upsell_email';
     else if (priceIs(amount, EMAIL_PRICE)) source = 'daily_email';
     else source = 'store_or_daily';
     if (via === 'paypal') paypal++;
@@ -348,15 +381,20 @@ export function buildMembers() {
   // their first dictionary purchase. `joined`/`source` are set when they became
   // a paying member after it; `already` when they were a member before.
   const dictionary = [];
+  const buyers = new Map();
   for (const [id, times] of dictBuys) {
     const bought = Math.min(...times);
     const j = joinedAs.get(id);
     if (!j) dictionary.push({ bought });
-    else if (j.date >= bought - 300) dictionary.push({ bought, joined: j.date, source: j.source });
+    else if (j.date >= bought - 300) {
+      dictionary.push({ bought, joined: j.date, source: j.source });
+      buyers.set(id, { bought, joined: j.date, source: j.source, cents: ahCents.get(id) || 0 });
+    }
     else dictionary.push({ bought, already: true });
   }
   dictionary.sort((a, b) => a.bought - b.bought);
   return {
+    buyers,
     members,
     dictionary,
     stats: {
