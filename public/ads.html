@@ -83,6 +83,10 @@ tr.totals td{font-weight:600;border-top:1px solid #c4c9d4}
 .link-row .src{min-width:120px;color:#111827;font-weight:500}
 .link-row .url{flex:1;min-width:0;overflow-wrap:anywhere;color:#1d4ed8;font-family:ui-monospace,Menlo,monospace;font-size:15px}
 .link-row .dim{color:#374151;font-size:15px}
+.campaign-title{font-size:30px;font-weight:700;color:#111827;margin:2.25rem 0 1.1rem;padding-bottom:.6rem;border-bottom:2px solid #d1d5db}
+.campaign-title:first-child{margin-top:0}
+.sub-title{font-size:20px;font-weight:700;color:#111827;margin-bottom:.75rem}
+.sub-title .section-sub{display:inline;font-size:16px;font-weight:500;margin-left:.5rem}
 .section-sub{display:block;font-size:16px;font-weight:500;color:#374151;margin-top:.25rem}
 details.how{margin-top:.75rem}
 details.how>summary{cursor:pointer;font-size:16px;font-weight:600;color:#1d4ed8;list-style:none;display:inline-block}
@@ -137,12 +141,13 @@ td.meta{color:#374151}
 </div>
 
 <div id="page" style="display:none">
+  <div class="campaign-title">Atomic Homework September 2026</div>
   <div class="section">
-    <div class="section-title">Atomic Homework September 2026<span class="section-sub">Totals in date range</span></div>
+    <div class="sub-title">Totals</div>
     <div class="metric-grid" id="metrics"></div>
   </div>
   <div class="section">
-    <div class="section-title">Atomic Homework September 2026<span class="section-sub">By ad set</span></div>
+    <div class="sub-title">By ad set</div>
     <div class="chart-card table-wrap">
       <table>
         <thead><tr>
@@ -156,18 +161,19 @@ td.meta{color:#374151}
     <details class="how"><summary>How this is counted</summary><p class="note" id="note"></p></details>
   </div>
 
+  <div class="campaign-title">Atomic Dictionary - Cold - Ad Tests</div>
   <div class="section">
-    <div class="section-title">Atomic Dictionary - Cold - Ad Tests<span class="section-sub">Totals in date range</span></div>
+    <div class="sub-title">Totals</div>
     <div class="warn-box" id="d-warn"></div>
     <div class="metric-grid" id="d-metrics"></div>
   </div>
   <div class="section">
-    <div class="section-title">Atomic Dictionary - Cold - Ad Tests<span class="section-sub">Atomic Homework sales to these buyers, by source</span></div>
+    <div class="sub-title">Sales by source<span class="section-sub">Atomic Homework sales to these dictionary buyers</span></div>
     <div class="metric-grid" id="d-homework"></div>
     <details class="how"><summary>How this is counted</summary><p class="note" id="d-homework-note"></p></details>
   </div>
   <div class="section">
-    <div class="section-title">Atomic Dictionary - Cold - Ad Tests<span class="section-sub">By ad set</span></div>
+    <div class="sub-title">By ad set</div>
     <div class="chart-card table-wrap">
       <table>
         <thead><tr>
@@ -181,7 +187,7 @@ td.meta{color:#374151}
     <details class="how"><summary>How this is counted</summary><p class="note" id="d-note"></p></details>
   </div>
   <div class="section" id="ab-section" style="display:none">
-    <div class="section-title">Atomic Dictionary - Cold - Ad Tests<span class="section-sub">Upsell A/B test · A = free trial, long video (#15) · B = €39, short video (#14)</span></div>
+    <div class="sub-title">Upsell A/B test<span class="section-sub">A = free trial, long video (#15) · B = €39, short video (#14)</span></div>
     <div class="chart-card table-wrap">
       <table>
         <thead><tr>
