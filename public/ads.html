@@ -362,8 +362,10 @@ function render(data) {
     'Spend and Meta purchases come from Meta. Meta purchases are Meta\'s own count and are not used anywhere else on this page. ' +
     'Everything else comes from the main Stripe account ("Mr. Vig - Kartra"), split by the country of the card used: ' +
     'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (the A/B test: €39 sales go to E_EUROPE_COLD_AMAZING_Full-Price, trials to Test B - E_EUROPE_COLD_AMAZING - Free Trial, each with its own cost per paying customer) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY.<br>' +
-    `Only two Stripe payment links count; every other €39 payment and trial is ignored. ` +
+    `Only these Stripe payment links count; every other €39 payment and trial is ignored. ` +
     `<strong>€39 sales</strong>: paid checkouts of the €39 link (${esc(data.links?.direct || '')}) in the date range, one per customer.<br>` +
+    ((data.links?.adsets || []).length ? 'Ad sets with their own €39 link get only the sales from that link (any card country), and those sales are not counted on E_EUROPE_COLD_AMAZING_Full-Price: ' +
+      data.links.adsets.map((x) => `${esc(x.adset)} = ${esc(x.link)}`).join(' · ') + '.<br>' : '') +
     `<strong>Trials</strong>: checkouts of the free-trial link (${esc(data.links?.trial || '')}) in the date range, one per customer. ` +
     '<strong>Paid trials</strong>: of those, the ones whose first €39 invoice was paid, even if that was after the end date. ' +
     '<strong>Still in trial</strong>: trial not over yet.<br>' +
