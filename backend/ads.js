@@ -35,6 +35,11 @@ const PRICE_CENTS = 3900;
 // Only sales through these two Stripe payment links count.
 const DIRECT_LINK = 'plink_1TAh4gBRJTRkwDOLrKOnTE5R'; // €39, pays straight away
 const TRIAL_LINK = 'plink_1UPnBuBRJTRkwDOL5OuauwiB';  // free trial, then €39
+// Ad sets with their own €39 payment link. Sales through these links go only
+// to that ad set (any card country) and never to the region's shared €39 row.
+const ADSET_LINKS = [
+  { adset: 'AH East – One Thing Video', link: 'plink_1UVUHVBRJTRkwDOLmofA9UXE' }, // english.mrvig.com/one-thing
+];
 const MAX_PAGES = 200;
 const CACHE_MS = 10 * 60 * 1000;
 const DAY = 86400;
@@ -61,7 +66,9 @@ const adsetRegion = (name) => {
 // trials to the free-trial ad set; each gets its own cost per paying customer.
 const EE_DIRECT_ADSET = 'E_EUROPE_COLD_AMAZING_Full-Price';
 const EE_TRIAL_ADSET = 'Test B - E_EUROPE_COLD_AMAZING - Free Trial';
-const sameName = (a, b) => (a || '').trim().toLowerCase() === b.toLowerCase();
+// Names are compared ignoring case and the kind of dash (- – —), so a typed hyphen still matches.
+const normName = (s) => (s || '').trim().toLowerCase().replace(/[\u2012-\u2015]/g, '-').replace(/\s+/g, ' ');
+const sameName = (a, b) => normName(a) === normName(b);
 
 import { buildDictionarySection } from './ads-dictionary.js';
 
@@ -205,9 +212,9 @@ export const sessionIdent = (cs) => {
   return identOf(cs.customer_details?.email || cust?.email, cust?.id || cs.customer || '');
 };
 
-/** Paid checkouts of the €39 direct link, one per customer. */
-async function stripeSales(from, to) {
-  const raw = await linkCheckouts(DIRECT_LINK, from, to, [
+/** Paid checkouts of a €39 link (the shared direct link by default), one per customer. */
+async function stripeSales(from, to, link = DIRECT_LINK) {
+  const raw = await linkCheckouts(link, from, to, [
     'data.payment_intent.latest_charge', 'data.subscription.latest_invoice.charge',
   ]);
   const seen = new Set();
@@ -306,14 +313,16 @@ export async function buildAdsReport(since, until) {
   let sales = [];
   let trials = [];
   let dictionary = null;
+  let ownSales = [];
   try {
-    [sales, trials, dictionary] = await Promise.all([
+    [sales, trials, dictionary, ownSales] = await Promise.all([
       stripeSales(from, to),
       stripeTrials(from, to),
       buildDictionarySection(since, until, from, to, hasMeta && !!account).catch((err) => {
         console.error('[ads] dictionary section failed:', err);
         return { error: err.message };
       }),
+      Promise.all(ADSET_LINKS.map((x) => stripeSales(from, to, x.link))),
     ]);
   } catch (err) {
     if (/Stripe 403/.test(err.message)) throw new Error('The Stripe key cannot read checkouts. Add "Checkout Sessions: Read" to the restricted key (STRIPE_KEY). ' + err.message);
@@ -332,6 +341,16 @@ export async function buildAdsReport(since, until) {
     bump(r.countries, s.country);
     bump(r.salesCountries, s.country);
   }
+  // Own-link sales count in the region totals, but not in the shared €39 row.
+  const ownByAdset = ADSET_LINKS.map((x, i) => ({ ...x, sales: ownSales[i] || [] }));
+  for (const o of ownByAdset) {
+    for (const s of o.sales) {
+      const r = regions[s.region];
+      r.sales++;
+      r.ownSales = (r.ownSales || 0) + 1;
+      bump(r.countries, s.country);
+    }
+  }
   for (const t of trials) {
     const r = regions[t.region];
     r.trials++;
@@ -348,17 +367,32 @@ export async function buildAdsReport(since, until) {
   // are shown even when Meta reports no spend for one of them in the range.
   // Other ad sets with no spend (e.g. the One Thing ad sets) are hidden.
   const ee = regions.ee;
-  adsets = adsets.filter((a) => a.spend > 0);
+  const eeShared = ee.sales - (ee.ownSales || 0); // €39 sales through the shared link only
+  adsets = adsets.filter((a) => a.spend > 0 || ownByAdset.some((o) => sameName(a.name, o.adset) && o.sales.length));
   for (const name of [EE_DIRECT_ADSET, EE_TRIAL_ADSET]) {
     if (!adsets.some((a) => sameName(a.name, name))) adsets.push({ id: '', name, region: 'ee', spend: 0, metaPurchases: 0 });
   }
+  for (const o of ownByAdset) {
+    if (!o.sales.length || adsets.some((a) => sameName(a.name, o.adset))) continue;
+    adsets.push({ id: '', name: o.adset, region: adsetRegion(o.adset), spend: 0, metaPurchases: 0 });
+  }
   for (const a of adsets) {
+    const own = ownByAdset.find((o) => sameName(a.name, o.adset));
+    if (own) {
+      const countries = {};
+      for (const s of own.sales) bump(countries, s.country);
+      const st = { sales: own.sales.length, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries, ownLink: own.link };
+      st.paying = st.sales;
+      st.costPerPaying = st.paying && a.spend ? a.spend / st.paying : null;
+      a.stripe = st;
+      continue;
+    }
     if (a.region !== 'ee') continue;
     const direct = sameName(a.name, EE_DIRECT_ADSET);
     const trial = sameName(a.name, EE_TRIAL_ADSET);
     if (!direct && !trial) { a.stripe = null; continue; }
     const st = direct
-      ? { sales: ee.sales, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: ee.salesCountries }
+      ? { sales: eeShared, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: ee.salesCountries }
       : { sales: 0, trials: ee.trials, paidTrials: ee.paidTrials, inTrial: ee.inTrial, pendingTrials: ee.pendingTrials, countries: ee.trialCountries };
     st.paying = st.sales + st.paidTrials;
     st.costPerPaying = st.paying && a.spend ? a.spend / st.paying : null;
@@ -375,7 +409,7 @@ export async function buildAdsReport(since, until) {
     adsets: adsets.sort((a, b) => a.region.localeCompare(b.region) || b.spend - a.spend),
     regions,
     regionOrder: Object.keys(REGIONS),
-    links: { direct: DIRECT_LINK, trial: TRIAL_LINK },
+    links: { direct: DIRECT_LINK, trial: TRIAL_LINK, adsets: ADSET_LINKS },
     dictionary,
     warnings,
     builtAt: new Date().toISOString(),
