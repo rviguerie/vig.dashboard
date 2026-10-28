@@ -39,6 +39,7 @@ const TRIAL_LINK = 'plink_1UPnBuBRJTRkwDOL5OuauwiB';  // free trial, then €39
 // to that ad set (any card country) and never to the region's shared €39 row.
 const ADSET_LINKS = [
   { adset: 'AH East – One Thing Video', link: 'plink_1UVUHVBRJTRkwDOLmofA9UXE' }, // english.mrvig.com/one-thing
+  { adset: 'E_EUROPE_COLD_IMAGES_Full-Price', link: 'plink_1UVXclBRJTRkwDOLzd0VZIie' }, // english.mrvig.com/one-thing-img
 ];
 const MAX_PAGES = 200;
 const CACHE_MS = 10 * 60 * 1000;
