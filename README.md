@@ -161,7 +161,9 @@ For each Meta ad set in the campaign "Atomic Homework September 2026" (ad accoun
 | Paid trials | Trials whose first €39 invoice was paid (even after the end date) |
 | Cost per paying customer | Spend ÷ (€39 sales + paid trials) |
 
-Only those two payment links count; every other €39 payment and trial is ignored. `STRIPE_KEY` needs **Checkout Sessions: Read** for this.
+Some ad sets have their own €39 payment link (list `ADSET_LINKS` in `backend/ads.js`). Their sales show only on that ad set (any card country), still count in the region and page totals, and are not counted on `E_EUROPE_COLD_AMAZING_Full-Price`. Now: `AH East – One Thing Video` = `plink_1UVUHVBRJTRkwDOLmofA9UXE` (button on english.mrvig.com/one-thing). Names match ignoring case and dash type.
+
+Only those payment links count; every other €39 payment and trial is ignored. `STRIPE_KEY` needs **Checkout Sessions: Read** for this.
 
 Stripe numbers are split by card country: BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA = the Eastern Europe A/B test; DE, AT, CH, NL, BE, FR, LU = the W_EUROPE ad set; ES, PT, IT, GR, CY = the S_EUROPE ad set. Ad sets are matched by name (containing `W_EUROPE` or `S_EUROPE`; every other ad set in the campaign is the A/B test). In the A/B test the ad sets are not combined: €39 sales show only on `E_EUROPE_COLD_AMAZING_Full-Price` and trials only on `Test B - E_EUROPE_COLD_AMAZING - Free Trial`, each with cost per paying customer from its own spend. Those two rows always show; any other ad set in this campaign with no spend in the chosen dates (such as the One Thing ad sets) is hidden.
 
