@@ -161,7 +161,7 @@ For each Meta ad set in the campaign "Atomic Homework September 2026" (ad accoun
 | Paid trials | Trials whose first €39 invoice was paid (even after the end date) |
 | Cost per paying customer | Spend ÷ (€39 sales + paid trials) |
 
-Some ad sets have their own €39 payment link (list `ADSET_LINKS` in `backend/ads.js`). Their sales show only on that ad set (any card country), still count in the region and page totals, and are not counted on `E_EUROPE_COLD_AMAZING_Full-Price`. Now: `AH East – One Thing Video` = `plink_1UVUHVBRJTRkwDOLmofA9UXE` (button on english.mrvig.com/one-thing). Names match ignoring case and dash type.
+Some ad sets have their own €39 payment link (list `ADSET_LINKS` in `backend/ads.js`). Their sales show only on that ad set (any card country), still count in the region and page totals, and are not counted on `E_EUROPE_COLD_AMAZING_Full-Price`. Now: `AH East – One Thing Video` = `plink_1UVUHVBRJTRkwDOLmofA9UXE` (button on english.mrvig.com/one-thing); `E_EUROPE_COLD_IMAGES_Full-Price` = `plink_1UVXclBRJTRkwDOLzd0VZIie` (button on english.mrvig.com/one-thing-img). Names match ignoring case and dash type.
 
 Only those payment links count; every other €39 payment and trial is ignored. `STRIPE_KEY` needs **Checkout Sessions: Read** for this.
 
