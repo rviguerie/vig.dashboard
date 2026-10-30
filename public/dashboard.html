@@ -610,12 +610,25 @@ function compute(filters) {
   for (const [key, hist] of histories.entries()) {
     const product = key.split('||')[0];
     let best = null;
+    // joinDate = start of the current membership: the first-ever charge, or a
+    // charge more than 60 days after the previous paid period ran out (a
+    // returning member). Returning members count as "New", matching Kartra.
+    // Shorter gaps are late rebills, not new sign-ups.
+    let joinDate = null, prevUntil = null;
+    for (const c of hist) {
+      const m = monthsFor(product, c.amount);
+      if (joinDate === null || (prevUntil !== null && c.date - prevUntil > 60 * 86400000)) joinDate = c.date;
+      if (m !== null) {
+        const until = new Date(c.date.getTime() + (m * 30 + 7) * 86400000);
+        if (prevUntil === null || until > prevUntil) prevUntil = until;
+      }
+    }
     for (const c of hist) {
       const months = monthsFor(product, c.amount);
       if (months === null) continue;
       if (!best || c.date > best.date) {
         const activeUntil = new Date(c.date.getTime() + (months * 30 + 7) * 86400000);
-        best = { date: c.date, amount: c.amount, months, activeUntil, impliedMrr: c.amount / months, currency: c.currency, firstDate: hist[0].date };
+        best = { date: c.date, amount: c.amount, months, activeUntil, impliedMrr: c.amount / months, currency: c.currency, firstDate: joinDate };
       }
     }
     if (best) lastCharge.set(key, best);
