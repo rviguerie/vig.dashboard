@@ -160,6 +160,19 @@ td.meta{color:#374151}
     </div>
     <details class="how"><summary>How this is counted</summary><p class="note" id="note"></p></details>
   </div>
+  <div class="section" id="byad-section" style="display:none">
+    <div class="sub-title">By ad (tagged sales)</div>
+    <div class="chart-card table-wrap">
+      <table>
+        <thead><tr>
+          <th>Ad set / ad</th><th>Spend</th><th>Meta purchases<br>(not counted)</th>
+          <th>€39 sales</th><th>Cost per sale</th>
+        </tr></thead>
+        <tbody id="byad-tbody"></tbody>
+      </table>
+    </div>
+    <details class="how"><summary>How this is counted</summary><p class="note" id="byad-note"></p></details>
+  </div>
 
   <div class="campaign-title">Atomic Dictionary - Cold - Ad Tests</div>
   <div class="section">
@@ -349,8 +362,9 @@ function render(data) {
     rows += `<tr class="group"><td>${esc(r.label)}${sets.length ? ` · ${sets.length} ad sets` : ''}${countries(r)}</td>` +
       `<td>${k === 'other' && !r.spend ? '—' : money(r.spend)}</td><td class="meta">${k === 'other' && !r.metaPurchases ? '—' : fmt(r.metaPurchases)}</td>${stripeCells(r)}</tr>`;
     for (const a of sets) {
-      rows += `<tr class="adset"><td>${esc(a.name)}</td><td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
-        '<td colspan="6" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td></tr>';
+      rows += `<tr class="adset"><td>${esc(a.name)}${a.stripe ? countries(a.stripe) : ''}</td><td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
+        (a.stripe ? stripeCells(a.stripe)
+          : '<td colspan="6" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td>') + '</tr>';
     }
   }
   rows += `<tr class="totals"><td>Total</td><td>${money(tot.spend)}</td><td class="meta">${fmt(tot.metaPurchases)}</td>` +
@@ -370,10 +384,40 @@ function render(data) {
     '<strong>Paid trials</strong>: of those, the ones whose first €39 invoice was paid, even if that was after the end date. ' +
     '<strong>Still in trial</strong>: trial not over yet.<br>' +
     '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + paid trials). The total leaves out "Other countries", since no ad set targets them.';
+  renderByAd(data);
   renderDictionary(data.dictionary);
   renderAbTest(data.dictionary?.abTest);
   document.getElementById('page').style.display = 'block';
 }
+
+function renderByAd(data) {
+  const sec = document.getElementById('byad-section');
+  const tagged = (data.adsTagging?.taggedAdsets || []);
+  const norm = (x) => (x || '').trim().toLowerCase().replace(/[\u2012-\u2015]/g, '-').replace(/\s+/g, ' ');
+  // Only ad sets whose links carry the ad tag can be split by ad.
+  const ads = (data.ads || []).filter((a) => tagged.includes(norm(a.adset)) || TAGGED_ADSETS.includes(norm(a.adset)));
+  if (!ads.length) { sec.style.display = 'none'; return; }
+  let rows = '', cur = null;
+  for (const a of ads) {
+    if (a.adset !== cur) {
+      cur = a.adset;
+      const g = ads.filter((x) => x.adset === cur);
+      const sp = g.reduce((t, x) => t + x.spend, 0), sl = g.reduce((t, x) => t + x.sales, 0), mp = g.reduce((t, x) => t + x.metaPurchases, 0);
+      rows += `<tr class="group"><td>${esc(cur)}</td><td>${money(sp)}</td><td class="meta">${fmt(mp)}</td>${num(sl)}<td>${money(sl && sp ? sp / sl : null)}</td></tr>`;
+    }
+    const c = Object.entries(a.countries || {}).sort((x, y) => y[1] - x[1]);
+    rows += `<tr class="adset"><td>${esc(a.name)}${c.length ? `<div class="countries">Card country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : ''}</td>` +
+      `<td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>${num(a.sales)}<td>${money(a.costPerSale)}</td></tr>`;
+  }
+  document.getElementById('byad-tbody').innerHTML = rows;
+  document.getElementById('byad-note').innerHTML =
+    'Each ad\'s link carries its ad set ID and ad ID (utm_term and utm_content). The sales page passes them to the €39 Stripe checkout as client_reference_id, ' +
+    'so each €39 sale is counted on the ad that brought the buyer. Only ad sets whose ads carry the tag are shown here. ' +
+    `€39 sales on the shared sales pages with no tag (older ads, or people who came back later in another browser): ${fmt(data.adsTagging?.untaggedAdSales || 0)}.`;
+  sec.style.display = 'block';
+}
+// Ad sets whose ads carry the utm tags; shown in "By ad" even before their first sale.
+const TAGGED_ADSETS = ['e_europe_cold_over50_full-price', 'e_europe_cold_over50_images_full-price', 'w_europe_cold_images_full-price'];
 
 function renderDictionary(d) {
   const warn = document.getElementById('d-warn');

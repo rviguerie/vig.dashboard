@@ -70,6 +70,15 @@ const EE_TRIAL_ADSET = 'Test B - E_EUROPE_COLD_AMAZING - Free Trial';
 // Names are compared ignoring case and the kind of dash (- – —), so a typed hyphen still matches.
 const normName = (s) => (s || '').trim().toLowerCase().replace(/[\u2012-\u2015]/g, '-').replace(/\s+/g, ' ');
 const sameName = (a, b) => normName(a) === normName(b);
+// Ad tag from the sales page: Stripe client_reference_id = "<ad set id>__<ad id>" (Meta's
+// {{adset.id}} and {{ad.id}} in the ads' URL parameters, so renaming an ad set or ad
+// doesn't break it). Names also work, with every character other than A-Z a-z 0-9 _ -
+// turned into "_" (Stripe's allowed set).
+const refKey = (s) => (s || '').replace(/[\u2012-\u2015]/g, '-').replace(/[^A-Za-z0-9_-]/g, '_').toLowerCase();
+const parseRef = (ref) => {
+  const i = (ref || '').indexOf('__');
+  return i > 0 ? { adset: ref.slice(0, i), ad: ref.slice(i + 2) } : null;
+};
 
 import { buildDictionarySection } from './ads-dictionary.js';
 
@@ -190,6 +199,25 @@ export async function metaInsights(since, until, campaign) {
   }));
 }
 
+/** Spend and Meta purchases per ad of `campaign` for the dates. */
+async function metaAds(since, until, campaign) {
+  const rows = await metaAll(`${AD_ACCOUNT}/insights`, {
+    level: 'ad',
+    fields: 'campaign_name,adset_id,adset_name,ad_id,ad_name,spend,actions',
+    time_range: JSON.stringify({ since, until }),
+    filtering: JSON.stringify([{ field: 'campaign.name', operator: 'EQUAL', value: campaign }]),
+    limit: '500',
+  });
+  return rows.filter((r) => r.campaign_name === campaign).map((r) => ({
+    id: r.ad_id,
+    adsetId: r.adset_id,
+    adset: r.adset_name,
+    name: r.ad_name,
+    spend: Number(r.spend) || 0,
+    metaPurchases: purchases(r.actions),
+  }));
+}
+
 async function metaAdsets(since, until) {
   return (await metaInsights(since, until, CAMPAIGN)).map((a) => ({ ...a, region: adsetRegion(a.name) }));
 }
@@ -228,7 +256,7 @@ async function stripeSales(from, to, link = DIRECT_LINK) {
     const charge = cs.payment_intent?.latest_charge || cs.subscription?.latest_invoice?.charge;
     const country = (typeof charge === 'object' && charge?.payment_method_details?.card?.country) ||
       cs.customer_details?.address?.country || '';
-    sales.push({ region: regionOf(country), country });
+    sales.push({ region: regionOf(country), country, ref: cs.client_reference_id || '' });
   }
   return sales;
 }
@@ -295,11 +323,12 @@ export async function buildAdsReport(since, until) {
   const hasMeta = !!process.env.META_ACCESS_TOKEN;
   let account = null;
   let adsets = [];
+  let metaAdRows = [];
   if (!hasMeta) warnings.push('META_ACCESS_TOKEN is not set in Railway, so spend and Meta purchases are missing.');
   else {
     try {
       account = await metaAccount();
-      adsets = await metaAdsets(since, until);
+      [adsets, metaAdRows] = await Promise.all([metaAdsets(since, until), metaAds(since, until, CAMPAIGN)]);
     } catch (err) {
       console.error('[ads] Meta failed:', err.message);
       warnings.push('Could not read Meta: ' + err.message);
@@ -343,7 +372,30 @@ export async function buildAdsReport(since, until) {
     bump(r.salesCountries, s.country);
   }
   // Own-link sales count in the region totals, but not in the shared €39 row.
-  const ownByAdset = ADSET_LINKS.map((x, i) => ({ ...x, sales: ownSales[i] || [] }));
+  // A sale through an own link goes to the link's ad set, unless the sales page tagged it
+  // with another ad set of this campaign (several ad sets can share one sales page).
+  const ownByAdset = ADSET_LINKS.map((x) => ({ ...x, sales: [] }));
+  const knownAdsets = [...new Set([...adsets.map((a) => a.name), ...ADSET_LINKS.map((x) => x.adset)])];
+  const adsetIdName = Object.fromEntries([...metaAdRows.map((a) => ({ id: a.adsetId, name: a.adset })), ...adsets]
+    .filter((a) => a.id).map((a) => [String(a.id), a.name]));
+  const findAdset = (key) => adsetIdName[key] || knownAdsets.find((n) => refKey(n) === key.toLowerCase());
+  const tagged = []; // { adset, ad, sale }
+  ADSET_LINKS.forEach((x, i) => {
+    for (const s of ownSales[i] || []) {
+      const t = parseRef(s.ref);
+      const target = t && findAdset(t.adset);
+      const name = target || x.adset;
+      let o = ownByAdset.find((y) => sameName(y.adset, name));
+      if (!o) { o = { adset: name, link: x.link, sales: [], sharedPage: true }; ownByAdset.push(o); }
+      o.sales.push(s);
+      if (t) tagged.push({ adset: name, ad: t.ad, sale: s });
+    }
+  });
+  for (const s of sales) {
+    const t = parseRef(s.ref);
+    const target = t && findAdset(t.adset);
+    if (target) tagged.push({ adset: target, ad: t.ad, sale: s });
+  }
   for (const o of ownByAdset) {
     for (const s of o.sales) {
       const r = regions[s.region];
@@ -400,6 +452,21 @@ export async function buildAdsReport(since, until) {
     a.stripe = st;
   }
 
+  // By ad: Meta spend per ad, and the €39 sales the sales page tagged with that ad.
+  const ads = metaAdRows.filter((a) => a.spend > 0).map((a) => ({ ...a, sales: 0, countries: {} }));
+  let untaggedAdSales = 0;
+  for (const t of tagged) {
+    let a = ads.find((x) => String(x.id) === t.ad) ||
+      ads.find((x) => sameName(x.adset, t.adset) && refKey(x.name) === t.ad.toLowerCase());
+    if (!a) { a = { id: '', adset: t.adset, name: t.ad, spend: 0, metaPurchases: 0, sales: 0, countries: {} }; ads.push(a); }
+    a.sales++;
+    bump(a.countries, t.sale.country);
+  }
+  for (const a of ads) a.costPerSale = a.sales && a.spend ? a.spend / a.sales : null;
+  for (const o of ownByAdset) untaggedAdSales += o.sales.filter((s) => !parseRef(s.ref)).length;
+  const taggedAdsets = [...new Set(tagged.map((t) => normName(t.adset)))];
+  ads.sort((a, b) => a.adset.localeCompare(b.adset) || b.spend - a.spend);
+
   const data = {
     campaign: CAMPAIGN,
     adAccount: AD_ACCOUNT.replace('act_', ''),
@@ -409,6 +476,8 @@ export async function buildAdsReport(since, until) {
     metaConfigured: hasMeta,
     adsets: adsets.sort((a, b) => a.region.localeCompare(b.region) || b.spend - a.spend),
     regions,
+    ads,
+    adsTagging: { taggedAdsets, untaggedAdSales },
     regionOrder: Object.keys(REGIONS),
     links: { direct: DIRECT_LINK, trial: TRIAL_LINK, adsets: ADSET_LINKS },
     dictionary,
