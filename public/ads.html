@@ -152,7 +152,7 @@ td.meta{color:#374151}
       <table>
         <thead><tr>
           <th>Ad set / card country group</th><th>Spend</th><th>Meta purchases<br>(not counted)</th>
-          <th>€39 sales</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
+          <th>€39 sales<br>(Stripe)</th><th>PayPal<br>sales</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
           <th>Paying customers</th><th>Cost per paying customer</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -322,25 +322,25 @@ function render(data) {
   wb.style.display = data.warnings?.length ? 'block' : 'none';
 
   const regs = data.regionOrder.map((k) => [k, data.regions[k]]);
-  const tot = { spend: 0, metaPurchases: 0, sales: 0, trials: 0, paidTrials: 0, inTrial: 0, paying: 0 };
+  const tot = { spend: 0, metaPurchases: 0, sales: 0, paypal: 0, trials: 0, paidTrials: 0, inTrial: 0, paying: 0 };
   for (const [, r] of regs) for (const k of Object.keys(tot)) tot[k] += r[k] || 0;
   const adRegs = regs.filter(([k]) => k !== 'other');
   const adPaying = adRegs.reduce((s, [, r]) => s + r.paying, 0);
 
   document.getElementById('metrics').innerHTML = [
     ['Spend', money(tot.spend), 'Meta, this campaign'],
-    ['€39 sales', fmt(tot.sales), '€39 payment link, all countries'],
+    ['€39 sales', fmt(tot.sales + tot.paypal), `${fmt(tot.sales)} Stripe + ${fmt(tot.paypal)} PayPal, all countries`],
     ['Trials started', fmt(tot.trials), `${fmt(tot.inTrial)} still in trial`],
     ['Paid trials', fmt(tot.paidTrials), tot.trials ? `${Math.round(100 * tot.paidTrials / tot.trials)}% of trials` : ''],
     ['Cost per paying customer', money(adPaying && tot.spend ? tot.spend / adPaying : null), `${fmt(adPaying)} paying customers in ad countries`],
     ['Meta purchases', fmt(tot.metaPurchases), 'Meta\'s own count · not used'],
   ].map(([l, v, s]) => `<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${v}</div><div class="metric-sub">${s}</div></div>`).join('');
 
-  const stripeCells = (r) => num(r.sales) + num(r.trials) + num(r.paidTrials) + num(r.inTrial) + num(r.paying) +
+  const stripeCells = (r) => num(r.sales) + num(r.paypal) + num(r.trials) + num(r.paidTrials) + num(r.inTrial) + num(r.paying) +
     `<td>${money(r.costPerPaying)}</td>`;
   const countries = (r) => {
     const c = Object.entries(r.countries || {}).sort((a, b) => b[1] - a[1]);
-    return c.length ? `<div class="countries">Paying by card country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : '';
+    return c.length ? `<div class="countries">Paying by country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : '';
   };
   let rows = '';
   for (const [k, r] of regs) {
@@ -355,7 +355,13 @@ function render(data) {
       for (const a of sets) {
         rows += `<tr class="group"><td>${esc(a.name)}<div class="countries">${esc(r.label)}</div>${a.stripe ? countries(a.stripe) : ''}</td>` +
           `<td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
-          (a.stripe ? stripeCells(a.stripe) : '<td colspan="6" class="zero" style="text-align:left">No Stripe sales assigned to this ad set</td>') + '</tr>';
+          (a.stripe ? stripeCells(a.stripe) : '<td colspan="7" class="zero" style="text-align:left">No Stripe sales assigned to this ad set</td>') + '</tr>';
+      }
+      if (r.paypal) {
+        // PayPal can't be tied to one ad set, so Eastern Europe's PayPal sales get their own row.
+        const pc = Object.entries(r.paypalCountries || {}).sort((a, b) => b[1] - a[1]);
+        rows += `<tr class="group"><td>PayPal · any Eastern Europe ad set<div class="countries">PayPal can't tell which ad set${pc.length ? ' · by PayPal country: ' + pc.map(([c, n]) => `${esc(c)} ${n}`).join(', ') : ''}</div></td>` +
+          `<td class="zero">—</td><td class="meta">—</td>${num(0)}${num(r.paypal)}${num(0)}${num(0)}${num(0)}${num(r.paypal)}<td class="zero">—</td></tr>`;
       }
       continue;
     }
@@ -364,11 +370,11 @@ function render(data) {
     for (const a of sets) {
       rows += `<tr class="adset"><td>${esc(a.name)}${a.stripe ? countries(a.stripe) : ''}</td><td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
         (a.stripe ? stripeCells(a.stripe)
-          : '<td colspan="6" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td>') + '</tr>';
+          : '<td colspan="7" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td>') + '</tr>';
     }
   }
   rows += `<tr class="totals"><td>Total</td><td>${money(tot.spend)}</td><td class="meta">${fmt(tot.metaPurchases)}</td>` +
-    num(tot.sales) + num(tot.trials) + num(tot.paidTrials) + num(tot.inTrial) + num(tot.paying) +
+    num(tot.sales) + num(tot.paypal) + num(tot.trials) + num(tot.paidTrials) + num(tot.inTrial) + num(tot.paying) +
     `<td>${money(adPaying && tot.spend ? tot.spend / adPaying : null)}</td></tr>`;
   document.getElementById('tbody').innerHTML = rows;
 
@@ -383,7 +389,9 @@ function render(data) {
     `<strong>Trials</strong>: checkouts of the free-trial link (${esc(data.links?.trial || '')}) in the date range, one per customer. ` +
     '<strong>Paid trials</strong>: of those, the ones whose first €39 invoice was paid, even if that was after the end date. ' +
     '<strong>Still in trial</strong>: trial not over yet.<br>' +
-    '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + paid trials). The total leaves out "Other countries", since no ad set targets them.';
+    `<strong>PayPal sales</strong>: new PayPal subscriptions to the €39 plan on the sales pages (${esc((data.links?.paypalPlans || []).join(', '))}) that started and paid in the date range, one per payer. ` +
+    'PayPal can\'t carry an ad tag, so they are split by the payer\'s PayPal country, not by ad set. In Eastern Europe they get their own row. PayPal data runs about 3 hours behind.<br>' +
+    '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + PayPal sales + paid trials). The total leaves out "Other countries", since no ad set targets them.';
   renderByAd(data);
   renderDictionary(data.dictionary);
   renderAbTest(data.dictionary?.abTest);
