@@ -122,6 +122,16 @@ function mapPayPalTxn(t) {
 
 // ─── Paginated transaction fetch for one ≤31-day window ──────────────
 async function fetchWindow(startDate, endDate) {
+  const out = [];
+  for (const t of await fetchWindowRaw(startDate, endDate)) {
+    const row = mapPayPalTxn(t);
+    if (row) out.push(row);
+  }
+  return out;
+}
+
+/** Every PayPal transaction (unmapped) in one ≤31-day window. */
+async function fetchWindowRaw(startDate, endDate) {
   const token = await getAccessToken();
   const out = [];
   let page = 1;
@@ -143,10 +153,7 @@ async function fetchWindow(startDate, endDate) {
     }
     const j = await res.json();
     totalPages = j.total_pages || 1;
-    for (const t of j.transaction_details || []) {
-      const row = mapPayPalTxn(t);
-      if (row) out.push(row);
-    }
+    out.push(...(j.transaction_details || []));
     page++;
     if (page <= totalPages) await sleep(300);
   } while (page <= totalPages);
@@ -238,4 +245,89 @@ export async function backfillPayPal(yearsBack = 3) {
   };
   console.log(`[paypal-backfill] done: ${JSON.stringify(result)}`);
   return result;
+}
+
+// ─── Public: new subscribers of given PayPal plans (for the /ads page) ──
+const subCache = new Map(); // subscription ID → { plan_id, create_time, start_time, subscriber }
+async function getSubscription(id) {
+  if (subCache.has(id)) return subCache.get(id);
+  const token = await getAccessToken();
+  const res = await fetch(`${PP_BASE}/v1/billing/subscriptions/${encodeURIComponent(id)}`, {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  if (!res.ok) throw new Error(`PayPal subscription ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const j = await res.json();
+  const sub = { plan_id: j.plan_id, create_time: j.create_time, start_time: j.start_time, subscriber: j.subscriber };
+  subCache.set(id, sub);
+  return sub;
+}
+
+/**
+ * New PayPal subscribers of `planIds` whose subscription started in
+ * [from, to) (unix seconds) and who paid in that range. One per payer.
+ * Returns { sales: [{ country, email, subscription, created }], warnings }.
+ * PayPal's transaction data runs about 3 hours behind.
+ */
+export async function paypalPlanSales(from, to, planIds) {
+  const warnings = [];
+  const end = Math.min(to, Math.floor(Date.now() / 1000));
+  const raw = [];
+  for (let s = from; s < end; s += 30 * 86400) {
+    const e = Math.min(s + 30 * 86400, end);
+    raw.push(...await fetchWindowRaw(new Date(s * 1000), new Date(e * 1000)));
+    if (e < end) await sleep(300);
+  }
+  // Earliest subscription payment per subscription ID in the range.
+  const bySub = new Map();
+  for (const t of raw) {
+    const ti = t.transaction_info || {};
+    if (!PAYMENT_CODES.has(ti.transaction_event_code || '')) continue;
+    // Only euro payments near the €39 price (skips other products before reading each subscription).
+    const amt = parseFloat(ti.transaction_amount?.value || '0');
+    if ((ti.transaction_amount?.currency_code || '').toUpperCase() !== 'EUR' || amt < 30 || amt > 50) continue;
+    if (ti.paypal_reference_id_type !== 'SUB' || !ti.paypal_reference_id) continue;
+    const created = Math.floor(new Date(ti.transaction_initiation_date).getTime() / 1000);
+    if (!(created >= from && created < to)) continue;
+    const prev = bySub.get(ti.paypal_reference_id);
+    if (!prev || created < prev.created) {
+      bySub.set(ti.paypal_reference_id, {
+        created,
+        email: (t.payer_info?.email_address || '').toLowerCase(),
+        country: (t.payer_info?.country_code || '').toUpperCase(),
+      });
+    }
+  }
+  const plans = new Set(planIds);
+  const seen = new Set();
+  const sales = [];
+  let planCheckFailed = 0;
+  const entries = [...bySub.entries()].sort((a, b) => a[1].created - b[1].created);
+  const subs = new Map();
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(5, entries.length) }, async () => {
+    while (next < entries.length) {
+      const id = entries[next++][0];
+      try { subs.set(id, await getSubscription(id)); } catch (err) {
+        planCheckFailed++;
+        console.error('[paypal-ads] subscription read failed:', id, err.message);
+      }
+    }
+  }));
+  for (const [id, p] of entries) {
+    const sub = subs.get(id);
+    if (!sub) continue;
+    if (!plans.has(sub.plan_id)) continue;
+    const started = Math.floor(new Date(sub.create_time || sub.start_time).getTime() / 1000);
+    if (!(started >= from && started < to)) continue; // renewal of an older subscription
+    const email = p.email || (sub.subscriber?.email_address || '').toLowerCase();
+    const ident = email || sub.subscriber?.payer_id || id;
+    if (seen.has(ident)) continue;
+    seen.add(ident);
+    const country = p.country || (sub.subscriber?.shipping_address?.address?.country_code || '').toUpperCase();
+    sales.push({ country, email, subscription: id, created: p.created });
+  }
+  if (planCheckFailed) {
+    warnings.push(`Could not read ${planCheckFailed} PayPal subscription(s), so they are not counted. The PayPal app may need the Subscriptions permission.`);
+  }
+  return { sales, warnings };
 }

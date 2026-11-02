@@ -81,6 +81,12 @@ const parseRef = (ref) => {
 };
 
 import { buildDictionarySection } from './ads-dictionary.js';
+import { paypalPlanSales } from './paypal-refresh.js';
+
+// PayPal plan on the €39 sales pages (english.mrvig.com/amazing, /one-thing, /one-thing-img).
+// PayPal can't carry an ad tag, so these sales go to a region by the payer's
+// PayPal country, not to an ad set.
+const PAYPAL_PLANS = ['P-7DC78955SS332610WNH6M4JI'];
 
 const cache = new Map(); // "since|until" → { at, data }
 
@@ -344,8 +350,9 @@ export async function buildAdsReport(since, until) {
   let trials = [];
   let dictionary = null;
   let ownSales = [];
+  let paypal = { sales: [] };
   try {
-    [sales, trials, dictionary, ownSales] = await Promise.all([
+    [sales, trials, dictionary, ownSales, paypal] = await Promise.all([
       stripeSales(from, to),
       stripeTrials(from, to),
       buildDictionarySection(since, until, from, to, hasMeta && !!account).catch((err) => {
@@ -353,6 +360,12 @@ export async function buildAdsReport(since, until) {
         return { error: err.message };
       }),
       Promise.all(ADSET_LINKS.map((x) => stripeSales(from, to, x.link))),
+      process.env.PAYPAL_CLIENT_ID
+        ? paypalPlanSales(from, to, PAYPAL_PLANS).catch((err) => {
+          console.error('[ads] PayPal failed:', err);
+          return { sales: [], warnings: ['Could not read PayPal: ' + err.message] };
+        })
+        : Promise.resolve({ sales: [], warnings: ['PAYPAL_CLIENT_ID is not set in Railway, so PayPal sales are missing.'] }),
     ]);
   } catch (err) {
     if (/Stripe 403/.test(err.message)) throw new Error('The Stripe key cannot read checkouts. Add "Checkout Sessions: Read" to the restricted key (STRIPE_KEY). ' + err.message);
@@ -361,7 +374,7 @@ export async function buildAdsReport(since, until) {
 
   const regions = {};
   for (const k of Object.keys(REGIONS)) {
-    regions[k] = { label: REGIONS[k].label, spend: 0, metaPurchases: 0, sales: 0, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: {}, salesCountries: {}, trialCountries: {} };
+    regions[k] = { label: REGIONS[k].label, spend: 0, metaPurchases: 0, sales: 0, paypal: 0, paypalCountries: {}, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: {}, salesCountries: {}, trialCountries: {} };
   }
   for (const a of adsets) { regions[a.region].spend += a.spend; regions[a.region].metaPurchases += a.metaPurchases; }
   const bump = (m, c) => { if (c) m[c] = (m[c] || 0) + 1; };
@@ -404,6 +417,13 @@ export async function buildAdsReport(since, until) {
       bump(r.countries, s.country);
     }
   }
+  warnings.push(...(paypal.warnings || []));
+  for (const p of paypal.sales || []) {
+    const r = regions[regionOf(p.country)];
+    r.paypal++;
+    bump(r.countries, p.country);
+    bump(r.paypalCountries, p.country);
+  }
   for (const t of trials) {
     const r = regions[t.region];
     r.trials++;
@@ -412,7 +432,7 @@ export async function buildAdsReport(since, until) {
     else if (t.state === 'pending') r.pendingTrials++;
   }
   for (const r of Object.values(regions)) {
-    r.paying = r.sales + r.paidTrials;
+    r.paying = r.sales + r.paypal + r.paidTrials;
     r.costPerPaying = r.paying && r.spend ? r.spend / r.paying : null;
   }
 
@@ -479,7 +499,7 @@ export async function buildAdsReport(since, until) {
     ads,
     adsTagging: { taggedAdsets, untaggedAdSales },
     regionOrder: Object.keys(REGIONS),
-    links: { direct: DIRECT_LINK, trial: TRIAL_LINK, adsets: ADSET_LINKS },
+    links: { direct: DIRECT_LINK, trial: TRIAL_LINK, adsets: ADSET_LINKS, paypalPlans: PAYPAL_PLANS },
     dictionary,
     warnings,
     builtAt: new Date().toISOString(),
