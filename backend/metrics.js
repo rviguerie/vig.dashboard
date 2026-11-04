@@ -41,8 +41,28 @@ function monthsFor(product, amount) {
   return null;
 }
 
-const ymd = (d) => d.toISOString().slice(0, 10);
-const ym = (d) => d.toISOString().slice(0, 7);
+// Days are counted in Prague time (Europe/Prague), not UTC.
+const TZ = 'Europe/Prague';
+const _dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+const _partsFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const ymd = d => _dayFmt.format(d);
+const ym = d => _dayFmt.format(d).slice(0, 7);
+function tzOffsetMs(date) {
+  const p = _partsFmt.formatToParts(date);
+  const g = t => +p.find(x => x.type === t).value;
+  return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) - Math.floor(date.getTime() / 1000) * 1000;
+}
+// 'YYYY-MM-DD' -> Date at 00:00 Prague time on that day
+function dayStart(ymdStr) {
+  const guess = new Date(ymdStr + 'T00:00:00Z');
+  const first = new Date(guess.getTime() - tzOffsetMs(guess));
+  return new Date(guess.getTime() - tzOffsetMs(first));
+}
+// 'YYYY-MM-DD' -> last millisecond of that day in Prague time
+function dayEnd(ymdStr) {
+  const next = new Date(new Date(ymdStr + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10);
+  return new Date(dayStart(next).getTime() - 1);
+}
 
 /** Build the normalized charge list from cache (date objects, net, etc.). */
 function loadCharges() {
@@ -105,8 +125,8 @@ export function getSchema() {
  */
 export function queryMetrics({ start_date, end_date, product, channel } = {}) {
   const all = loadCharges();
-  const asOf = end_date ? new Date(end_date + 'T23:59:59Z') : new Date(Math.max(...all.map((c) => c.date.getTime())));
-  const cutoff = start_date ? new Date(start_date + 'T00:00:00Z') : new Date(asOf.getTime() - 30 * DAY);
+  const asOf = end_date ? dayEnd(end_date) : new Date(Math.max(...all.map((c) => c.date.getTime())));
+  const cutoff = start_date ? dayStart(start_date) : new Date(asOf.getTime() - 30 * DAY);
 
   const charges = all.filter((c) => {
     if (c.date > asOf) return false;
@@ -221,8 +241,8 @@ export function queryMetrics({ start_date, end_date, product, channel } = {}) {
 /** Monthly series of one metric across a window. For charts/trends. */
 export function monthlySeries({ metric = 'revenue', start_date, end_date, product, channel } = {}) {
   const all = loadCharges();
-  const asOf = end_date ? new Date(end_date + 'T23:59:59Z') : new Date(Math.max(...all.map((c) => c.date.getTime())));
-  const cutoff = start_date ? new Date(start_date + 'T00:00:00Z') : new Date(asOf.getTime() - 365 * DAY);
+  const asOf = end_date ? dayEnd(end_date) : new Date(Math.max(...all.map((c) => c.date.getTime())));
+  const cutoff = start_date ? dayStart(start_date) : new Date(asOf.getTime() - 365 * DAY);
 
   const buckets = {};
   const ensure = (mk) => (buckets[mk] = buckets[mk] || 0);
@@ -273,8 +293,8 @@ export function monthlySeries({ metric = 'revenue', start_date, end_date, produc
     };
 
     const points = [];
-    const m0 = new Date(cutoff); m0.setUTCDate(1); m0.setUTCHours(0, 0, 0, 0);
-    const mZ = new Date(asOf); mZ.setUTCDate(1); mZ.setUTCHours(0, 0, 0, 0);
+    const m0 = new Date(ym(cutoff) + '-01T12:00:00Z');
+    const mZ = new Date(ym(asOf) + '-01T12:00:00Z');
     for (let d = new Date(m0); d <= mZ; d.setUTCMonth(d.getUTCMonth() + 1)) {
       const startM = new Date(d);
       const nextM = new Date(d); nextM.setUTCMonth(nextM.getUTCMonth() + 1);
@@ -314,8 +334,8 @@ export function monthlySeries({ metric = 'revenue', start_date, end_date, produc
   }
 
   // fill gaps
-  const m0 = new Date(cutoff); m0.setUTCDate(1);
-  const mZ = new Date(asOf); mZ.setUTCDate(1);
+  const m0 = new Date(ym(cutoff) + '-01T12:00:00Z');
+  const mZ = new Date(ym(asOf) + '-01T12:00:00Z');
   for (let d = new Date(m0); d <= mZ; d.setUTCMonth(d.getUTCMonth() + 1)) ensure(ym(d));
   const points = Object.keys(buckets).sort().map((m) => ({ month: m, value: round(buckets[m]) }));
   return { metric, window: { start: ymd(cutoff), end: ymd(asOf) }, filter: { product: product || 'all', channel: channel || 'all' }, points };

@@ -10,11 +10,16 @@
  * Homework one-click upsell, so ThriveCart charges are stored under that
  * product unless their description names another product.
  *
+ * Each run also re-reads the last REFUND_LOOKBACK_DAYS of charges so refunds
+ * and reversals made after a charge was first synced are picked up. For charges
+ * already in the cache only the refund fields (status, amount_refunded) are
+ * updated, so enriched product names are kept.
+ *
  * Idempotent: dedupes by charge ID. Safe to call repeatedly.
  */
 
 import { getDb } from './firebase.js';
-import { getCachedCharges, appendToCache, recordRefresh } from './cache.js';
+import { getCachedCharges, appendToCache, updateCachedCharges, recordRefresh } from './cache.js';
 import { enrichCharges } from './stripe-enrich.js';
 
 const COLLECTION = 'charges';
@@ -22,6 +27,7 @@ const STRIPE_BASE = 'https://api.stripe.com/v1';
 const PAGE_SIZE = 100;
 const FIRESTORE_BATCH = 500;
 const MAX_PAGES = 1000; // safety stop; 100k charges max per refresh
+const REFUND_LOOKBACK_DAYS = 45;
 
 const ATOMIC = 'Mr. Vigs Atomic Homework';
 
@@ -145,7 +151,16 @@ async function writeBatchToFirestore(rows) {
  * persist them, update the cache. Returns a summary.
  */
 async function pullAccount(account, key) {
-  const sinceTs = getLatestTimestamp(account);
+  const latestTs = getLatestTimestamp(account);
+  const sinceTs = latestTs > 0 ? Math.max(0, latestTs - REFUND_LOOKBACK_DAYS * 86400) : 0;
+  const cachedById = new Map();
+  if (sinceTs > 0) {
+    for (const c of getCachedCharges()) {
+      if (c.channel === 'paypal') continue;
+      if (parseInt(c.created, 10) > sinceTs) cachedById.set(c.id, c);
+    }
+  }
+  const refundChanges = [];
   console.log(`[refresh] ${account}: sinceTs=${sinceTs} (${sinceTs ? new Date(sinceTs * 1000).toISOString() : 'epoch'})`);
   const fresh = [];
   let scanned = 0;
@@ -159,12 +174,17 @@ async function pullAccount(account, key) {
     for (const c of page) {
       scanned++;
       const row = mapStripeCharge(c, account);
-      if (row) fresh.push(row);
+      if (!row) continue;
+      const cached = cachedById.get(row.id);
+      if (!cached) { fresh.push(row); continue; }
+      if (cached.status !== row.status || Number(cached.amount_refunded || 0) !== row.amount_refunded) {
+        refundChanges.push({ id: row.id, status: row.status, amount_refunded: row.amount_refunded });
+      }
     }
     if (!data.has_more) break;
     startingAfter = page[page.length - 1].id;
   }
-  return { sinceTs, pages, scanned, fresh };
+  return { sinceTs, pages, scanned, fresh, refundChanges };
 }
 
 export async function refreshFromStripe() {
@@ -173,6 +193,7 @@ export async function refreshFromStripe() {
   const { sinceTs } = main;
   let { pages, scanned } = main;
   const fresh = main.fresh;
+  const refundChanges = main.refundChanges;
 
   // ThriveCart account: failures here must not block the main account.
   let thrivecart = null;
@@ -180,6 +201,7 @@ export async function refreshFromStripe() {
     try {
       const tc = await pullAccount('thrivecart', process.env.STRIPE_THRIVECART_KEY);
       fresh.push(...tc.fresh);
+      refundChanges.push(...tc.refundChanges);
       pages += tc.pages;
       scanned += tc.scanned;
       thrivecart = { scanned: tc.scanned, fetched: tc.fresh.length };
@@ -192,6 +214,10 @@ export async function refreshFromStripe() {
   // Write to Firestore, then merge into cache
   await writeBatchToFirestore(fresh);
   const { added, updated } = appendToCache(fresh);
+
+  // Refunds/reversals on charges we already had
+  await writeBatchToFirestore(refundChanges);
+  const refundsUpdated = refundChanges.length ? updateCachedCharges(refundChanges) : 0;
 
   // Attribute any newly-arrived native subs (resolve product via invoice)
   let enrichedCount = 0;
@@ -209,6 +235,7 @@ export async function refreshFromStripe() {
     fetched: fresh.length,
     added,
     updated,
+    refundsUpdated,
     enriched: enrichedCount,
     thrivecart,
     durationMs: Date.now() - t0,
