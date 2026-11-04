@@ -336,8 +336,28 @@ const TRACKED = Object.keys(PRICE_RULES);
 const fmt = n => Math.round(n).toLocaleString('en-US');
 const eur = n => '€' + fmt(n);
 const usd = n => '$' + fmt(n);
-const ymd = d => d.toISOString().slice(0, 10);
-const ym = d => d.toISOString().slice(0, 7);
+// Days are counted in Prague time (Europe/Prague), not UTC.
+const TZ = 'Europe/Prague';
+const _dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+const _partsFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const ymd = d => _dayFmt.format(d);
+const ym = d => _dayFmt.format(d).slice(0, 7);
+function tzOffsetMs(date) {
+  const p = _partsFmt.formatToParts(date);
+  const g = t => +p.find(x => x.type === t).value;
+  return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) - Math.floor(date.getTime() / 1000) * 1000;
+}
+// 'YYYY-MM-DD' -> Date at 00:00 Prague time on that day
+function dayStart(ymdStr) {
+  const guess = new Date(ymdStr + 'T00:00:00Z');
+  const first = new Date(guess.getTime() - tzOffsetMs(guess));
+  return new Date(guess.getTime() - tzOffsetMs(first));
+}
+// 'YYYY-MM-DD' -> last millisecond of that day in Prague time
+function dayEnd(ymdStr) {
+  const next = new Date(new Date(ymdStr + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10);
+  return new Date(dayStart(next).getTime() - 1);
+}
 
 function toast(msg, isErr) {
   const el = document.getElementById('toast');
@@ -511,8 +531,8 @@ function getFilters() {
   return {
     // selectedProducts: empty Set means "all products"
     products: selectedProducts,
-    start: new Date(document.getElementById('filter-start').value + 'T00:00:00Z'),
-    end: new Date(document.getElementById('filter-end').value + 'T23:59:59Z'),
+    start: dayStart(document.getElementById('filter-start').value),
+    end: dayEnd(document.getElementById('filter-end').value),
     rate: parseFloat(document.getElementById('rate-input').value) || 1.10,
   };
 }
@@ -697,8 +717,8 @@ function compute(filters) {
       }
       return set;
     };
-    const cm0 = new Date(cutoff); cm0.setUTCDate(1); cm0.setUTCHours(0, 0, 0, 0);
-    const cmZ = new Date(asOf); cmZ.setUTCDate(1); cmZ.setUTCHours(0, 0, 0, 0);
+    const cm0 = new Date(ym(cutoff) + '-01T12:00:00Z');
+    const cmZ = new Date(ym(asOf) + '-01T12:00:00Z');
     for (let d = new Date(cm0); d <= cmZ; d.setUTCMonth(d.getUTCMonth() + 1)) {
       const startM = new Date(d); const nextM = new Date(d); nextM.setUTCMonth(nextM.getUTCMonth() + 1);
       const evalNext = nextM > asOf ? asOf : nextM;
@@ -722,8 +742,8 @@ function compute(filters) {
     ...Object.keys(rebillsMonthly),
     ...Object.keys(churnMonthly),
   ]);
-  const m0 = new Date(cutoff); m0.setUTCDate(1);
-  const mZ = new Date(asOf); mZ.setUTCDate(1);
+  const m0 = new Date(ym(cutoff) + '-01T12:00:00Z');
+  const mZ = new Date(ym(asOf) + '-01T12:00:00Z');
   for (let d = new Date(m0); d <= mZ; d.setUTCMonth(d.getUTCMonth() + 1)) allMonths.add(ym(d));
   const sortedMonths = [...allMonths].sort();
 
@@ -970,7 +990,7 @@ function syncProductFilterUI() {
 function setRange(days) {
   if (!dataMaxDate) return;
   if (days === 'yesterday') {
-    const y = ymd(new Date(dataMaxDate.getTime() - 86400000));
+    const y = new Date(new Date(ymd(dataMaxDate) + 'T12:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
     document.getElementById('filter-start').value = y;
     document.getElementById('filter-end').value = y;
     recompute();
