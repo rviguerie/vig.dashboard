@@ -404,16 +404,30 @@ export async function buildAdsReport(since, until) {
       if (t) tagged.push({ adset: name, ad: t.ad, sale: s });
     }
   });
+  // A shared-link sale the sales page tagged with another ad set goes to that ad set
+  // (not to EE_DIRECT_ADSET), so "By ad set" agrees with "By ad".
   for (const s of sales) {
     const t = parseRef(s.ref);
     const target = t && findAdset(t.adset);
-    if (target) tagged.push({ adset: target, ad: t.ad, sale: s });
+    if (!target) continue;
+    tagged.push({ adset: target, ad: t.ad, sale: s });
+    if (sameName(target, EE_DIRECT_ADSET)) continue;
+    let o = ownByAdset.find((y) => sameName(y.adset, target));
+    if (!o) { o = { adset: target, link: null, sales: [], sharedPage: true }; ownByAdset.push(o); }
+    o.sales.push(s);
+    s.fromShared = true;
   }
   for (const o of ownByAdset) {
     for (const s of o.sales) {
       const r = regions[s.region];
-      r.sales++;
       r.ownSales = (r.ownSales || 0) + 1;
+      if (s.fromShared) {
+        // Already counted in the region above; just take it out of the shared row's countries.
+        if (r.salesCountries[s.country] > 1) r.salesCountries[s.country]--;
+        else delete r.salesCountries[s.country];
+        continue;
+      }
+      r.sales++;
       bump(r.countries, s.country);
     }
   }
