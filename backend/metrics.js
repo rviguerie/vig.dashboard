@@ -18,6 +18,7 @@ const PRICE_RULES = {
   'Vig Village': [[60, 1], [99, 1], [198, 2], [540, 12], [594, 12], [792, 12], [891, 12]],
   'Vitamin V EXTRA STRENGTH': [[29, 1]],
   'Speaking School': [[29, 1], [87, 3]],
+  'Everything Bundle - Yearly (€891)': [[891, 12]],
 };
 const TRACKED = Object.keys(PRICE_RULES);
 
