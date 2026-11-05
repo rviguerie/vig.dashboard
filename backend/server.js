@@ -87,7 +87,7 @@ app.post('/api/refresh', auth, async (_req, res) => {
   try {
     out.stripe = await refreshFromStripe();
   } catch (err) {
-    console.error('[/api/refresh] Stripe failed:', err);
+    console.error('[/api/refresh] Stripe failed:', err.message);
     out.stripeError = err.message;
   }
   if (process.env.PAYPAL_CLIENT_ID) {
@@ -105,6 +105,9 @@ app.post('/api/refresh', auth, async (_req, res) => {
     out.membersError = err.message;
   }
   const added = (out.stripe?.added || 0) + (out.paypal?.added || 0);
+  if (out.stripeError) {
+    return res.status(502).json({ ok: false, error: 'Stripe refresh failed: ' + out.stripeError, result: { added, ...out }, meta: getCacheMeta() });
+  }
   res.json({ ok: true, result: { added, ...out }, meta: getCacheMeta() });
 });
 
@@ -214,11 +217,10 @@ function boot() {
   try {
     initFirebase();
     console.log('[boot] Firebase initialized');
-    warmCache()
-      .then(() => {
-        startCron();
-        console.log('[boot] cache warm complete; data + cron ready');
-      })
+    // The cron runs even if the first load fails; each refresh loads the cache first.
+    startCron();
+    warmCache({ retry: true })
+      .then(() => console.log('[boot] cache warm complete; data ready'))
       .catch((err) => console.error('[boot] cache warm failed:', err));
     // Member-source data is independent: a failure here must not block the main dashboard.
     warmMembers()

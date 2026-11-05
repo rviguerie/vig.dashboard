@@ -19,7 +19,7 @@
  */
 
 import { getDb } from './firebase.js';
-import { getCachedCharges, appendToCache, updateCachedCharges, recordRefresh } from './cache.js';
+import { getCachedCharges, appendToCache, updateCachedCharges, recordRefresh, ensureWarm } from './cache.js';
 import { enrichCharges } from './stripe-enrich.js';
 
 const COLLECTION = 'charges';
@@ -187,8 +187,34 @@ async function pullAccount(account, key) {
   return { sinceTs, pages, scanned, fresh, refundChanges };
 }
 
-export async function refreshFromStripe() {
+let running = null; // in-flight refresh, so clicks and the cron don't overlap
+
+export function refreshFromStripe() {
+  if (!running) {
+    running = runRefresh().finally(() => { running = null; });
+  }
+  return running;
+}
+
+async function runRefresh() {
   const t0 = Date.now();
+  try {
+    return await doRefresh(t0);
+  } catch (err) {
+    recordRefresh({ error: err.message, durationMs: Date.now() - t0, finishedAt: new Date().toISOString() });
+    console.error(`[refresh] failed: ${err.message}`);
+    throw err;
+  }
+}
+
+async function doRefresh(t0) {
+  // The cache tells us where the last sync stopped. Without it we'd pull every
+  // charge ever made and write them all again, so load it first.
+  try {
+    await ensureWarm();
+  } catch (err) {
+    throw new Error('Could not load saved charges from Firestore: ' + err.message);
+  }
   const main = await pullAccount('main', getStripeKey());
   const { sinceTs } = main;
   let { pages, scanned } = main;
