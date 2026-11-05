@@ -183,6 +183,8 @@ A second section on `/ads`, one row per ad set of that campaign: spend, Meta pur
 | Symptom | Fix |
 |---|---|
 | Login screen shows "Firebase is not configured" | Check `FIREBASE_API_KEY`/`AUTH_DOMAIN`/`PROJECT_ID`/`APP_ID` env vars are set |
+| Login fails with "Invalid or expired token" | The message now says why. Most often: `FIREBASE_PROJECT_ID` (web config) and the `project_id` inside `FIREBASE_SERVICE_ACCOUNT_JSON` are different projects — check the boot log for `[firebase] Project mismatch`, and generate the service-account key from the same project as the web app. If it says the token expired, sign out and in again. If it says the server clock is off, redeploy. |
+| Login fails with "Server sign-in is not configured" | `FIREBASE_SERVICE_ACCOUNT_JSON` is missing or not valid JSON. Paste the raw file contents in Railway (no extra quotes). |
 | Login works but `/api/charges` returns 403 | Caller's email isn't in `ALLOWED_EMAILS`. Add it, restart service. |
 | `/api/health` returns 500 or `count: 0` | Firestore probably empty. Run `npm run seed`. Or check `FIREBASE_SERVICE_ACCOUNT_JSON` is valid JSON. |
 | Refresh fails with Stripe 401 | `STRIPE_KEY` invalid or revoked. Generate a new restricted key and update env. |

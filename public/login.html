@@ -58,7 +58,7 @@ if (!cfg || !cfg.apiKey) {
       user.getIdToken().then(token => {
         fetch('/api/me', { headers: { Authorization: 'Bearer ' + token } })
           .then(r => r.ok ? location.href = '/dashboard' : r.json().then(j => {
-            errEl.textContent = (j.error || 'Access denied') + (j.email ? ` (${j.email})` : '');
+            errEl.textContent = (j.error || 'Access denied') + (j.email ? ` (${j.email})` : '') + (j.detail ? ` — ${j.detail}` : '');
             auth.signOut();
           }));
       });
