@@ -19,25 +19,45 @@ let byId = new Map();      // id → index in `charges` for fast dedupe
 let warmedAt = null;       // ISO timestamp of last full warm
 let lastRefreshAt = null;  // ISO timestamp of last successful refresh
 let lastRefreshResult = null;
+let warmError = null;      // last startup-load error message, cleared on success
+let warmAttempts = 0;
+let warmPromise = null;    // in-flight load, shared by everyone waiting on it
+
+const WARM_TIMEOUT_MS = 3 * 60 * 1000;
 
 export function getCachedCharges() {
   return charges;
+}
+
+export function isWarm() {
+  return !!warmedAt;
 }
 
 export function getCacheMeta() {
   return {
     count: charges.length,
     warmedAt,
+    warmError,
+    warmAttempts,
     lastRefreshAt,
     lastRefreshResult,
   };
 }
 
-export async function warmCache() {
+function withTimeout(promise, ms, what) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} took longer than ${Math.round(ms / 1000)}s`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function loadOnce() {
+  warmAttempts++;
   const db = getDb();
-  console.log('[cache] warming from Firestore…');
+  console.log(`[cache] warming from Firestore (attempt ${warmAttempts})…`);
   const t0 = Date.now();
-  const snap = await db.collection(COLLECTION).get();
+  const snap = await withTimeout(db.collection(COLLECTION).get(), WARM_TIMEOUT_MS, 'Firestore load');
   const next = [];
   const nextIdx = new Map();
   snap.forEach(doc => {
@@ -45,11 +65,52 @@ export async function warmCache() {
     nextIdx.set(doc.id, next.length);
     next.push({ id: doc.id, ...d });
   });
+  // Keep anything a refresh added while the load was running.
+  for (const c of charges) {
+    if (!nextIdx.has(c.id)) { nextIdx.set(c.id, next.length); next.push(c); }
+  }
   charges = next;
   byId = nextIdx;
   warmedAt = new Date().toISOString();
+  warmError = null;
   const ms = Date.now() - t0;
   console.log(`[cache] warmed: ${charges.length.toLocaleString()} charges in ${ms}ms`);
+}
+
+/** One load attempt. Concurrent callers share it. Throws on failure. */
+export function ensureWarm() {
+  if (warmedAt) return Promise.resolve();
+  if (!warmPromise) {
+    warmPromise = loadOnce()
+      .catch(err => {
+        warmError = err.message || String(err);
+        console.error(`[cache] warm failed (attempt ${warmAttempts}): ${warmError}`);
+        throw err;
+      })
+      .finally(() => { warmPromise = null; });
+  }
+  return warmPromise;
+}
+
+/**
+ * Load the cache from Firestore.
+ *   retry: keep trying until it works (5s, 10s, 20s … then every 2 min). Used at server boot.
+ *   force: reload even if already loaded (scripts re-checking totals).
+ */
+export async function warmCache({ retry = false, force = false } = {}) {
+  if (force) { warmedAt = null; charges = []; byId = new Map(); }
+  let delay = 5000;
+  for (;;) {
+    try {
+      await ensureWarm();
+      return;
+    } catch (err) {
+      if (!retry) throw err;
+      console.error(`[cache] retrying Firestore load in ${delay / 1000}s`);
+      await new Promise(r => setTimeout(r, delay));
+      delay = Math.min(delay * 2, 120000);
+    }
+  }
 }
 
 /**
@@ -74,7 +135,8 @@ export function appendToCache(newCharges) {
 }
 
 export function recordRefresh(result) {
-  lastRefreshAt = new Date().toISOString();
+  // A failed run is kept in lastRefreshResult but doesn't move "last sync".
+  if (!result?.error) lastRefreshAt = new Date().toISOString();
   lastRefreshResult = result;
 }
 

@@ -22,7 +22,7 @@ async function main() {
   await warmCache();
   const result = await backfillPayPal(years);
   console.log('[paypal-backfill] result:', result);
-  await warmCache();
+  await warmCache({ force: true });
   console.log('[paypal-backfill] cache re-warmed; done.');
   process.exit(0);
 }

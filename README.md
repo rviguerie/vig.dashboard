@@ -188,6 +188,7 @@ A second section on `/ads`, one row per ad set of that campaign: spend, Meta pur
 | Login works but `/api/charges` returns 403 | Caller's email isn't in `ALLOWED_EMAILS`. Add it, restart service. |
 | `/api/health` returns 500 or `count: 0` | Firestore probably empty. Run `npm run seed`. Or check `FIREBASE_SERVICE_ACCOUNT_JSON` is valid JSON. |
 | Refresh fails with Stripe 401 | `STRIPE_KEY` invalid or revoked. Generate a new restricted key and update env. |
+| Dashboard stuck on "Server warming up" / `/api/charges` shows `warming: true` | The server couldn't load saved charges from Firestore. The page and `/api/charges` (`warmError`) now show why, and the server keeps retrying. In the Railway log look for `[cache] warm failed`. `PERMISSION_DENIED` or `NOT_FOUND` usually means `FIREBASE_SERVICE_ACCOUNT_JSON` is for a different project than the Firestore data, or Firestore isn't set up in that project. |
 | Dashboard loads but is empty | Server cache is empty. Check server logs — if you see `[cache] warmed: 0 charges`, the Firestore collection is empty. Run seed. |
 | Cron isn't firing | Check `REFRESH_CRON` syntax. Verify in logs that `[cron] scheduled refreshFromStripe on "0 * * * *"` appears at boot. |
 

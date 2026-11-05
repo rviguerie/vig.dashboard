@@ -132,7 +132,7 @@ async function main() {
   console.log('[seed] refresh result:', result);
 
   // Final warm to verify totals match Firestore
-  await warmCache();
+  await warmCache({ force: true });
   console.log('[seed] done. Cache verified against Firestore.');
   process.exit(0);
 }
