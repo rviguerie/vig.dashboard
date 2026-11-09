@@ -270,6 +270,8 @@ async function getSubscription(id) {
  */
 export async function paypalPlanSales(from, to, planIds) {
   const warnings = [];
+  const diag = { transactions: 0, euroPayments: 0, noSubId: 0, subPayments: 0, otherPlan: 0, renewals: 0 };
+  const otherPlans = new Map();
   const end = Math.min(to, Math.floor(Date.now() / 1000));
   const raw = [];
   for (let s = from; s < end; s += 30 * 86400) {
@@ -277,6 +279,7 @@ export async function paypalPlanSales(from, to, planIds) {
     raw.push(...await fetchWindowRaw(new Date(s * 1000), new Date(e * 1000)));
     if (e < end) await sleep(300);
   }
+  diag.transactions = raw.length;
   // Earliest subscription payment per subscription ID in the range.
   const bySub = new Map();
   for (const t of raw) {
@@ -285,12 +288,18 @@ export async function paypalPlanSales(from, to, planIds) {
     // Only euro payments near the €39 price (skips other products before reading each subscription).
     const amt = parseFloat(ti.transaction_amount?.value || '0');
     if ((ti.transaction_amount?.currency_code || '').toUpperCase() !== 'EUR' || amt < 30 || amt > 50) continue;
-    if (ti.paypal_reference_id_type !== 'SUB' || !ti.paypal_reference_id) continue;
+    diag.euroPayments++;
+    // The subscription ID (I-...) is usually the reference ID with type SUB,
+    // but PayPal does not always set the type, so also accept any I- ID.
+    const subId = [ti.paypal_reference_id, ti.custom_field, ti.invoice_id]
+      .find((v) => typeof v === 'string' && /^I-[A-Z0-9]+$/i.test(v.trim()));
+    if (!subId) { diag.noSubId++; continue; }
+    diag.subPayments++;
     const created = Math.floor(new Date(ti.transaction_initiation_date).getTime() / 1000);
     if (!(created >= from && created < to)) continue;
-    const prev = bySub.get(ti.paypal_reference_id);
+    const prev = bySub.get(subId.trim());
     if (!prev || created < prev.created) {
-      bySub.set(ti.paypal_reference_id, {
+      bySub.set(subId.trim(), {
         created,
         email: (t.payer_info?.email_address || '').toLowerCase(),
         country: (t.payer_info?.country_code || '').toUpperCase(),
@@ -316,9 +325,13 @@ export async function paypalPlanSales(from, to, planIds) {
   for (const [id, p] of entries) {
     const sub = subs.get(id);
     if (!sub) continue;
-    if (!plans.has(sub.plan_id)) continue;
+    if (!plans.has(sub.plan_id)) {
+      diag.otherPlan++;
+      otherPlans.set(sub.plan_id, (otherPlans.get(sub.plan_id) || 0) + 1);
+      continue;
+    }
     const started = Math.floor(new Date(sub.create_time || sub.start_time).getTime() / 1000);
-    if (!(started >= from && started < to)) continue; // renewal of an older subscription
+    if (!(started >= from && started < to)) { diag.renewals++; continue; } // renewal of an older subscription
     const email = p.email || (sub.subscriber?.email_address || '').toLowerCase();
     const ident = email || sub.subscriber?.payer_id || id;
     if (seen.has(ident)) continue;
@@ -328,6 +341,13 @@ export async function paypalPlanSales(from, to, planIds) {
   }
   if (planCheckFailed) {
     warnings.push(`Could not read ${planCheckFailed} PayPal subscription(s), so they are not counted. The PayPal app may need the Subscriptions permission.`);
+  }
+  console.log('[paypal-ads]', JSON.stringify({ ...diag, otherPlans: Object.fromEntries(otherPlans), sales: sales.length }));
+  if (!sales.length) {
+    const op = [...otherPlans.entries()].map(([k, v]) => `${k} (${v})`).join(', ');
+    warnings.push(`PayPal check: ${diag.transactions} transactions, ${diag.euroPayments} euro payments of €30–50, ` +
+      `${diag.subPayments} with a subscription ID, ${diag.renewals} renewals, ${diag.otherPlan} on other plans` +
+      (op ? ` (${op})` : '') + ', 0 new €39 PayPal sales counted.');
   }
   return { sales, warnings };
 }
