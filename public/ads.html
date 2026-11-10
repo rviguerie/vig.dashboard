@@ -381,10 +381,10 @@ function render(data) {
   document.getElementById('note').innerHTML =
     'Spend and Meta purchases come from Meta. Meta purchases are Meta\'s own count and are not used anywhere else on this page. ' +
     'Everything else comes from the main Stripe account ("Mr. Vig - Kartra"), split by the country of the card used: ' +
-    'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (the A/B test: €39 sales go to E_EUROPE_COLD_AMAZING_Full-Price, trials to Test B - E_EUROPE_COLD_AMAZING - Free Trial, each with its own cost per paying customer) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY.<br>' +
+    'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (trials go to Test B - E_EUROPE_COLD_AMAZING - Free Trial) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY.<br>' +
     `Only these Stripe payment links count; every other €39 payment and trial is ignored. ` +
-    `<strong>€39 sales</strong>: paid checkouts of the €39 link (${esc(data.links?.direct || '')}) in the date range, one per customer.<br>` +
-    ((data.links?.adsets || []).length ? 'Ad sets with their own €39 link get only the sales from that link (any card country), and those sales are not counted on E_EUROPE_COLD_AMAZING_Full-Price: ' +
+    `<strong>€39 sales</strong>: paid checkouts of the €39 link (${esc(data.links?.direct || '')}) in the date range, one per customer, counted only when the sales page tagged the sale with an ad set of this campaign (it then goes to that ad set).<br>` +
+    ((data.links?.adsets || []).length ? 'Ad sets with their own €39 link get only the sales from that link (any card country), unless the sales page tagged them with another ad set: ' +
       data.links.adsets.map((x) => `${esc(x.adset)} = ${esc(x.link)}`).join(' · ') + '.<br>' : '') +
     `<strong>Trials</strong>: checkouts of the free-trial link (${esc(data.links?.trial || '')}) in the date range, one per customer. ` +
     '<strong>Paid trials</strong>: of those, the ones whose first €39 invoice was paid, even if that was after the end date. ' +
@@ -421,7 +421,7 @@ function renderByAd(data) {
   document.getElementById('byad-note').innerHTML =
     'Each ad\'s link carries its ad set ID and ad ID (utm_term and utm_content). The sales page passes them to the €39 Stripe checkout as client_reference_id, ' +
     'so each €39 sale is counted on the ad that brought the buyer. Only ad sets whose ads carry the tag are shown here. ' +
-    `€39 sales on the shared sales pages with no tag (older ads, or people who came back later in another browser): ${fmt(data.adsTagging?.untaggedAdSales || 0)}.`;
+    `€39 sales with no ad tag (email, other sources, or a lost tag): ${fmt(data.adsTagging?.untaggedAdSales || 0)}. These are left out of this whole page; the main dashboard records them.`;
   sec.style.display = 'block';
 }
 // Ad sets whose ads carry the utm tags; shown in "By ad" even before their first sale.

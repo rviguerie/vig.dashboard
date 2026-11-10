@@ -165,7 +165,7 @@ Some ad sets have their own €39 payment link (list `ADSET_LINKS` in `backend/a
 
 Only those payment links count; every other €39 payment and trial is ignored. `STRIPE_KEY` needs **Checkout Sessions: Read** for this.
 
-Stripe numbers are split by card country: BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA = the Eastern Europe A/B test; DE, AT, CH, NL, BE, FR, LU = the W_EUROPE ad set; ES, PT, IT, GR, CY = the S_EUROPE ad set. Ad sets are matched by name (containing `W_EUROPE` or `S_EUROPE`; every other ad set in the campaign is the A/B test). In the A/B test the ad sets are not combined: €39 sales show only on `E_EUROPE_COLD_AMAZING_Full-Price` and trials only on `Test B - E_EUROPE_COLD_AMAZING - Free Trial`, each with cost per paying customer from its own spend. Those two rows always show; any other ad set in this campaign with no spend in the chosen dates (such as the One Thing ad sets) is hidden.
+Stripe numbers are split by card country: BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA = the Eastern Europe A/B test; DE, AT, CH, NL, BE, FR, LU = the W_EUROPE ad set; ES, PT, IT, GR, CY = the S_EUROPE ad set. Ad sets are matched by name (containing `W_EUROPE` or `S_EUROPE`; every other ad set in the campaign is the A/B test). €39 sales through the shared link count only when the sales page tagged them with an ad set of this campaign; they go to that ad set. Untagged sales (email, other sources) are left out of /ads entirely, since the main dashboard records them. Trials show only on `Test B - E_EUROPE_COLD_AMAZING - Free Trial`. Those two rows always show; any other ad set in this campaign with no spend in the chosen dates (such as the One Thing ad sets) is hidden.
 
 ### Atomic Dictionary - Cold - Ad Tests
 

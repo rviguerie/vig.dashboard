@@ -372,6 +372,16 @@ export async function buildAdsReport(since, until) {
     throw err;
   }
 
+  const knownAdsets = [...new Set([...adsets.map((a) => a.name), ...ADSET_LINKS.map((x) => x.adset)])];
+  const adsetIdName = Object.fromEntries([...metaAdRows.map((a) => ({ id: a.adsetId, name: a.adset })), ...adsets]
+    .filter((a) => a.id).map((a) => [String(a.id), a.name]));
+  const findAdset = (key) => adsetIdName[key] || knownAdsets.find((n) => refKey(n) === key.toLowerCase());
+  // Shared-link €39 sales count on this page only when the sales page tagged them with an
+  // ad set of this campaign. Untagged sales (email, other sources) are left out here;
+  // the main dashboard records them.
+  const untaggedShared = sales.filter((s) => { const t = parseRef(s.ref); return !(t && findAdset(t.adset)); }).length;
+  sales = sales.filter((s) => { const t = parseRef(s.ref); return t && findAdset(t.adset); });
+
   const regions = {};
   for (const k of Object.keys(REGIONS)) {
     regions[k] = { label: REGIONS[k].label, spend: 0, metaPurchases: 0, sales: 0, paypal: 0, paypalCountries: {}, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: {}, salesCountries: {}, trialCountries: {} };
@@ -388,10 +398,6 @@ export async function buildAdsReport(since, until) {
   // A sale through an own link goes to the link's ad set, unless the sales page tagged it
   // with another ad set of this campaign (several ad sets can share one sales page).
   const ownByAdset = ADSET_LINKS.map((x) => ({ ...x, sales: [] }));
-  const knownAdsets = [...new Set([...adsets.map((a) => a.name), ...ADSET_LINKS.map((x) => x.adset)])];
-  const adsetIdName = Object.fromEntries([...metaAdRows.map((a) => ({ id: a.adsetId, name: a.adset })), ...adsets]
-    .filter((a) => a.id).map((a) => [String(a.id), a.name]));
-  const findAdset = (key) => adsetIdName[key] || knownAdsets.find((n) => refKey(n) === key.toLowerCase());
   const tagged = []; // { adset, ad, sale }
   ADSET_LINKS.forEach((x, i) => {
     for (const s of ownSales[i] || []) {
@@ -498,6 +504,7 @@ export async function buildAdsReport(since, until) {
   }
   for (const a of ads) a.costPerSale = a.sales && a.spend ? a.spend / a.sales : null;
   for (const o of ownByAdset) untaggedAdSales += o.sales.filter((s) => !parseRef(s.ref)).length;
+  untaggedAdSales += untaggedShared;
   const taggedAdsets = [...new Set(tagged.map((t) => normName(t.adset)))];
   ads.sort((a, b) => a.adset.localeCompare(b.adset) || b.spend - a.spend);
 
