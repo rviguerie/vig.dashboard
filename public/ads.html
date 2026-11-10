@@ -152,8 +152,8 @@ td.meta{color:#374151}
       <table>
         <thead><tr>
           <th>Ad set / card country group</th><th>Spend</th><th>Meta purchases<br>(not counted)</th>
-          <th>€39 sales<br>(Stripe)</th><th>PayPal<br>sales</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
-          <th>Paying customers</th><th>Cost per paying customer</th>
+          <th>€39 sales<br>(Stripe)</th><th>PayPal<br>sales</th><th>Cost per paying customer</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
+          <th>Paying customers</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -336,8 +336,8 @@ function render(data) {
     ['Meta purchases', fmt(tot.metaPurchases), 'Meta\'s own count · not used'],
   ].map(([l, v, s]) => `<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${v}</div><div class="metric-sub">${s}</div></div>`).join('');
 
-  const stripeCells = (r) => num(r.sales) + num(r.paypal) + num(r.trials) + num(r.paidTrials) + num(r.inTrial) + num(r.paying) +
-    `<td>${money(r.costPerPaying)}</td>`;
+  const stripeCells = (r) => num(r.sales) + num(r.paypal) + `<td>${money(r.costPerPaying)}</td>` +
+    num(r.trials) + num(r.paidTrials) + num(r.inTrial) + num(r.paying);
   const countries = (r) => {
     const c = Object.entries(r.countries || {}).sort((a, b) => b[1] - a[1]);
     return c.length ? `<div class="countries">Paying by country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : '';
@@ -361,7 +361,7 @@ function render(data) {
         // PayPal can't be tied to one ad set, so Eastern Europe's PayPal sales get their own row.
         const pc = Object.entries(r.paypalCountries || {}).sort((a, b) => b[1] - a[1]);
         rows += `<tr class="group"><td>PayPal · any Eastern Europe ad set<div class="countries">PayPal can't tell which ad set${pc.length ? ' · by PayPal country: ' + pc.map(([c, n]) => `${esc(c)} ${n}`).join(', ') : ''}</div></td>` +
-          `<td class="zero">—</td><td class="meta">—</td>${num(0)}${num(r.paypal)}${num(0)}${num(0)}${num(0)}${num(r.paypal)}<td class="zero">—</td></tr>`;
+          `<td class="zero">—</td><td class="meta">—</td>${num(0)}${num(r.paypal)}<td class="zero">—</td>${num(0)}${num(0)}${num(0)}${num(r.paypal)}</tr>`;
       }
       continue;
     }
@@ -374,8 +374,8 @@ function render(data) {
     }
   }
   rows += `<tr class="totals"><td>Total</td><td>${money(tot.spend)}</td><td class="meta">${fmt(tot.metaPurchases)}</td>` +
-    num(tot.sales) + num(tot.paypal) + num(tot.trials) + num(tot.paidTrials) + num(tot.inTrial) + num(tot.paying) +
-    `<td>${money(adPaying && tot.spend ? tot.spend / adPaying : null)}</td></tr>`;
+    num(tot.sales) + num(tot.paypal) + `<td>${money(adPaying && tot.spend ? tot.spend / adPaying : null)}</td>` +
+    num(tot.trials) + num(tot.paidTrials) + num(tot.inTrial) + num(tot.paying) + '</tr>';
   document.getElementById('tbody').innerHTML = rows;
 
   document.getElementById('note').innerHTML =
