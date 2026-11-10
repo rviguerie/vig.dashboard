@@ -151,9 +151,9 @@ td.meta{color:#374151}
     <div class="chart-card table-wrap">
       <table>
         <thead><tr>
-          <th>Ad set / card country group</th><th>Spend</th><th>Meta purchases<br>(not counted)</th>
+          <th>Ad set / card country group</th><th>Spend</th>
           <th>€39 sales<br>(Stripe)</th><th>PayPal<br>sales</th><th>Cost per paying customer</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
-          <th>Paying customers</th>
+          <th>Paying customers</th><th>Meta purchases<br>(not counted)</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -165,8 +165,8 @@ td.meta{color:#374151}
     <div class="chart-card table-wrap">
       <table>
         <thead><tr>
-          <th>Ad set / ad</th><th>Spend</th><th>Meta purchases<br>(not counted)</th>
-          <th>€39 sales</th><th>Cost per sale</th>
+          <th>Ad set / ad</th><th>Spend</th>
+          <th>€39 sales</th><th>Cost per sale</th><th>Meta purchases<br>(not counted)</th>
         </tr></thead>
         <tbody id="byad-tbody"></tbody>
       </table>
@@ -190,9 +190,9 @@ td.meta{color:#374151}
     <div class="chart-card table-wrap">
       <table>
         <thead><tr>
-          <th>Ad set / targeted countries</th><th>Spend</th><th>Revenue<br>so far</th><th>ROAS</th><th>Meta purchases<br>(not counted)</th>
+          <th>Ad set / targeted countries</th><th>Spend</th><th>Revenue<br>so far</th><th>ROAS</th>
           <th>Dictionary orders<br>(€7)</th><th>Order bumps<br>(€9)</th><th>Upsells<br>(trial or paid)</th><th>Upsell paid</th>
-          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer</th>
+          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer</th><th>Meta purchases<br>(not counted)</th>
         </tr></thead>
         <tbody id="d-tbody"></tbody>
       </table>
@@ -204,9 +204,9 @@ td.meta{color:#374151}
     <div class="chart-card table-wrap">
       <table>
         <thead><tr>
-          <th>Version / ad set</th><th>Spend</th><th>Revenue<br>so far</th><th>ROAS</th><th>Meta purchases<br>(not counted)</th>
+          <th>Version / ad set</th><th>Spend</th><th>Revenue<br>so far</th><th>ROAS</th>
           <th>Dictionary orders<br>(€7)</th><th>Order bumps<br>(€9)</th><th>Upsells<br>(trial or paid)</th><th>Upsell paid</th><th>Upsell trial<br>(not paid)</th>
-          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer</th>
+          <th>Cost per<br>dictionary buyer</th><th>Revenue<br>per buyer</th><th>Meta purchases<br>(not counted)</th>
         </tr></thead>
         <tbody id="ab-tbody"></tbody>
       </table>
@@ -347,35 +347,35 @@ function render(data) {
     const sets = data.adsets.filter((a) => a.region === k);
     if (sets.length === 1) {
       rows += `<tr class="group"><td>${esc(sets[0].name)}<div class="countries">${esc(r.label)}</div>${countries(r)}</td>` +
-        `<td>${money(r.spend)}</td><td class="meta">${fmt(r.metaPurchases)}</td>${stripeCells(r)}</tr>`;
+        `<td>${money(r.spend)}</td>${stripeCells(r)}<td class="meta">${fmt(r.metaPurchases)}</td></tr>`;
       continue;
     }
     if (k === 'ee') {
       // A/B test: each ad set gets only its own Stripe numbers (not combined).
       for (const a of sets) {
         rows += `<tr class="group"><td>${esc(a.name)}<div class="countries">${esc(r.label)}</div>${a.stripe ? countries(a.stripe) : ''}</td>` +
-          `<td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
-          (a.stripe ? stripeCells(a.stripe) : '<td colspan="7" class="zero" style="text-align:left">No Stripe sales assigned to this ad set</td>') + '</tr>';
+          `<td>${money(a.spend)}</td>` +
+          (a.stripe ? stripeCells(a.stripe) : '<td colspan="7" class="zero" style="text-align:left">No Stripe sales assigned to this ad set</td>') + `<td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
       }
       if (r.paypal) {
         // PayPal can't be tied to one ad set, so Eastern Europe's PayPal sales get their own row.
         const pc = Object.entries(r.paypalCountries || {}).sort((a, b) => b[1] - a[1]);
         rows += `<tr class="group"><td>PayPal · any Eastern Europe ad set<div class="countries">PayPal can't tell which ad set${pc.length ? ' · by PayPal country: ' + pc.map(([c, n]) => `${esc(c)} ${n}`).join(', ') : ''}</div></td>` +
-          `<td class="zero">—</td><td class="meta">—</td>${num(0)}${num(r.paypal)}<td class="zero">—</td>${num(0)}${num(0)}${num(0)}${num(r.paypal)}</tr>`;
+          `<td class="zero">—</td>${num(0)}${num(r.paypal)}<td class="zero">—</td>${num(0)}${num(0)}${num(0)}${num(r.paypal)}<td class="meta">—</td></tr>`;
       }
       continue;
     }
     rows += `<tr class="group"><td>${esc(r.label)}${sets.length ? ` · ${sets.length} ad sets` : ''}${countries(r)}</td>` +
-      `<td>${k === 'other' && !r.spend ? '—' : money(r.spend)}</td><td class="meta">${k === 'other' && !r.metaPurchases ? '—' : fmt(r.metaPurchases)}</td>${stripeCells(r)}</tr>`;
+      `<td>${k === 'other' && !r.spend ? '—' : money(r.spend)}</td>${stripeCells(r)}<td class="meta">${k === 'other' && !r.metaPurchases ? '—' : fmt(r.metaPurchases)}</td></tr>`;
     for (const a of sets) {
-      rows += `<tr class="adset"><td>${esc(a.name)}${a.stripe ? countries(a.stripe) : ''}</td><td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
+      rows += `<tr class="adset"><td>${esc(a.name)}${a.stripe ? countries(a.stripe) : ''}</td><td>${money(a.spend)}</td>` +
         (a.stripe ? stripeCells(a.stripe)
-          : '<td colspan="7" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td>') + '</tr>';
+          : '<td colspan="7" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td>') + `<td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
     }
   }
-  rows += `<tr class="totals"><td>Total</td><td>${money(tot.spend)}</td><td class="meta">${fmt(tot.metaPurchases)}</td>` +
+  rows += `<tr class="totals"><td>Total</td><td>${money(tot.spend)}</td>` +
     num(tot.sales) + num(tot.paypal) + `<td>${money(adPaying && tot.spend ? tot.spend / adPaying : null)}</td>` +
-    num(tot.trials) + num(tot.paidTrials) + num(tot.inTrial) + num(tot.paying) + '</tr>';
+    num(tot.trials) + num(tot.paidTrials) + num(tot.inTrial) + num(tot.paying) + `<td class="meta">${fmt(tot.metaPurchases)}</td></tr>`;
   document.getElementById('tbody').innerHTML = rows;
 
   document.getElementById('note').innerHTML =
@@ -411,11 +411,11 @@ function renderByAd(data) {
       cur = a.adset;
       const g = ads.filter((x) => x.adset === cur);
       const sp = g.reduce((t, x) => t + x.spend, 0), sl = g.reduce((t, x) => t + x.sales, 0), mp = g.reduce((t, x) => t + x.metaPurchases, 0);
-      rows += `<tr class="group"><td>${esc(cur)}</td><td>${money(sp)}</td><td class="meta">${fmt(mp)}</td>${num(sl)}<td>${money(sl && sp ? sp / sl : null)}</td></tr>`;
+      rows += `<tr class="group"><td>${esc(cur)}</td><td>${money(sp)}</td>${num(sl)}<td>${money(sl && sp ? sp / sl : null)}</td><td class="meta">${fmt(mp)}</td></tr>`;
     }
     const c = Object.entries(a.countries || {}).sort((x, y) => y[1] - x[1]);
     rows += `<tr class="adset"><td>${esc(a.name)}${c.length ? `<div class="countries">Card country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : ''}</td>` +
-      `<td>${money(a.spend)}</td><td class="meta">${fmt(a.metaPurchases)}</td>${num(a.sales)}<td>${money(a.costPerSale)}</td></tr>`;
+      `<td>${money(a.spend)}</td>${num(a.sales)}<td>${money(a.costPerSale)}</td><td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
   }
   document.getElementById('byad-tbody').innerHTML = rows;
   document.getElementById('byad-note').innerHTML =
@@ -483,21 +483,21 @@ function renderDictionary(d) {
     if (g.adsets.length === 1) {
       const a = g.adsets[0];
       rows += `<tr class="group"><td>${esc(a.name)}${targets(g)}${buyers(g.stats)}</td><td>${money(a.spend)}</td>` +
-        `${revCells(g.stats, a.spend)}<td class="meta">${fmt(a.metaPurchases)}</td>${cells(g.stats)}</tr>`;
+        `${revCells(g.stats, a.spend)}${cells(g.stats)}<td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
       continue;
     }
     rows += `<tr class="group"><td>${g.adsets.length} ad sets with the same countries${targets(g)}${buyers(g.stats)}</td>` +
-      `<td>${money(g.spend)}</td>${revCells(g.stats, g.spend)}<td class="meta">${fmt(g.metaPurchases)}</td>${cells(g.stats)}</tr>`;
+      `<td>${money(g.spend)}</td>${revCells(g.stats, g.spend)}${cells(g.stats)}<td class="meta">${fmt(g.metaPurchases)}</td></tr>`;
     for (const a of g.adsets) {
-      rows += `<tr class="adset"><td>${esc(a.name)}</td><td>${money(a.spend)}</td><td class="zero">—</td><td class="zero">—</td><td class="meta">${fmt(a.metaPurchases)}</td>` +
-        '<td colspan="6" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td></tr>';
+      rows += `<tr class="adset"><td>${esc(a.name)}</td><td>${money(a.spend)}</td><td class="zero">—</td><td class="zero">—</td>` +
+        '<td colspan="6" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td>' + `<td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
     }
   }
   for (const extra of [d.overlap, d.other]) {
     if (!extra.stats.orders && !extra.stats.upsellTrials) continue;
-    rows += `<tr class="group"><td>${esc(extra.label)}${buyers(extra.stats)}</td><td>—</td>${revCells(extra.stats, 0)}<td class="meta">—</td>${cells(extra.stats)}</tr>`;
+    rows += `<tr class="group"><td>${esc(extra.label)}${buyers(extra.stats)}</td><td>—</td>${revCells(extra.stats, 0)}${cells(extra.stats)}<td class="meta">—</td></tr>`;
   }
-  rows += `<tr class="totals"><td>Total</td><td>${money(d.total.spend)}</td><td>${revenueUsd(t.revenueCents / 100)}</td><td>${roas(targetedRev, d.total.spend)}</td><td class="meta">${fmt(d.total.metaPurchases)}</td>${cells(t)}</tr>`;
+  rows += `<tr class="totals"><td>Total</td><td>${money(d.total.spend)}</td><td>${revenueUsd(t.revenueCents / 100)}</td><td>${roas(targetedRev, d.total.spend)}</td>${cells(t)}<td class="meta">${fmt(d.total.metaPurchases)}</td></tr>`;
   document.getElementById('d-tbody').innerHTML = rows;
 
   const found = d.sources.map((s) => {
@@ -527,9 +527,9 @@ function renderAbTest(ab) {
   const pct = (n, st) => st.orders ? ` <span class="zero">(${Math.round(100 * n / st.orders)}%)</span>` : '';
   const row = (cls, name, spend, meta, st) =>
     `<tr class="${cls}"><td>${name}</td><td>${money(spend)}</td><td>${revenueUsd(st.revenueCents / 100)}</td><td>${roas(st.revenueCents / 100, spend)}</td>` +
-    `<td class="meta">${fmt(meta)}</td>${num(st.orders)}<td>${fmt(st.withBump)}${pct(st.withBump, st)}</td>` +
+    `${num(st.orders)}<td>${fmt(st.withBump)}${pct(st.withBump, st)}</td>` +
     `<td>${fmt(st.upsellTrials)}${pct(st.upsellTrials, st)}</td><td>${fmt(st.upsellPaid)}${pct(st.upsellPaid, st)}</td>${num(st.upsellInTrial)}` +
-    `<td>${money(st.costPerBuyer)}</td><td>${revenueUsd(st.revenuePerBuyer)}</td></tr>`;
+    `<td>${money(st.costPerBuyer)}</td><td>${revenueUsd(st.revenuePerBuyer)}</td><td class="meta">${fmt(meta)}</td></tr>`;
   let rows = '';
   for (const v of ab.versions) {
     rows += row('group', `<strong>${esc(v.label)}</strong>`, v.spend, v.metaPurchases, v.stats);
