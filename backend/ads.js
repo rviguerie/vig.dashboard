@@ -10,6 +10,7 @@
  *   ee      BG CZ HR HU LT LV PL RO SK UA   → the Eastern Europe A/B test ad sets
  *   w_eu    DE AT CH NL BE FR LU            → the W_EUROPE ad set
  *   s_eu    ES PT IT GR CY                  → the S_EUROPE ad set
+ *   world   ad sets with WORLD in the name   → only the sales tagged with them (any country)
  *   other   every other country
  *
  * Only two payment links count; every other €39 payment or trial is ignored:
@@ -49,6 +50,8 @@ export const REGIONS = {
   ee: { label: 'Eastern Europe (A/B test)', countries: ['BG', 'CZ', 'HR', 'HU', 'LT', 'LV', 'PL', 'RO', 'SK', 'UA'] },
   w_eu: { label: 'Western Europe (W_EUROPE)', countries: ['DE', 'AT', 'CH', 'NL', 'BE', 'FR', 'LU'] },
   s_eu: { label: 'Southern Europe (S_EUROPE)', countries: ['ES', 'PT', 'IT', 'GR', 'CY'] },
+  // WORLD ad sets target every country, so their sales are the ones tagged with them (any card country).
+  world: { label: 'World (WORLD)', countries: [] },
   other: { label: 'Other countries (no ad set)', countries: [] },
 };
 const regionOf = (country) => {
@@ -58,6 +61,7 @@ const regionOf = (country) => {
 };
 // Ad sets are matched to a region by name; anything else in the campaign is the A/B test.
 const adsetRegion = (name) => {
+  if (/world/i.test(name || '')) return 'world';
   if (/w[_\s-]?europe/i.test(name || '')) return 'w_eu';
   if (/s[_\s-]?europe/i.test(name || '')) return 's_eu';
   return 'ee';
@@ -381,6 +385,10 @@ export async function buildAdsReport(since, until) {
   // the main dashboard records them.
   const untaggedShared = sales.filter((s) => { const t = parseRef(s.ref); return !(t && findAdset(t.adset)); }).length;
   sales = sales.filter((s) => { const t = parseRef(s.ref); return t && findAdset(t.adset); });
+  // A sale tagged with a WORLD ad set counts in the World region, not its card country's region.
+  for (const s of sales) {
+    if (adsetRegion(findAdset(parseRef(s.ref).adset)) === 'world') s.region = 'world';
+  }
 
   const regions = {};
   for (const k of Object.keys(REGIONS)) {
@@ -478,6 +486,10 @@ export async function buildAdsReport(since, until) {
       st.paying = st.sales;
       st.costPerPaying = st.paying && a.spend ? a.spend / st.paying : null;
       a.stripe = st;
+      continue;
+    }
+    if (a.region === 'world') {
+      a.stripe = { sales: 0, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: {}, paying: 0, costPerPaying: null };
       continue;
     }
     if (a.region !== 'ee') continue;
