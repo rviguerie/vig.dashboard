@@ -6,7 +6,8 @@
  * their own column only and never counted as sales.
  *
  * Stripe (STRIPE_KEY, the "Mr. Vig - Kartra" account), read live for the same
- * dates and split by card country into regions:
+ * dates. A sale with an ad tag goes to the tagged ad set and its region, whatever
+ * the card country. Without a tag (PayPal, trials) it goes by country:
  *   ee      BG CZ HR HU LT LV PL RO SK UA   → the Eastern Europe A/B test ad sets
  *   w_eu    DE AT CH NL BE FR LU            → the W_EUROPE ad set
  *   s_eu    ES PT IT GR CY                  → the S_EUROPE ad set
@@ -385,10 +386,16 @@ export async function buildAdsReport(since, until) {
   // the main dashboard records them.
   const untaggedShared = sales.filter((s) => { const t = parseRef(s.ref); return !(t && findAdset(t.adset)); }).length;
   sales = sales.filter((s) => { const t = parseRef(s.ref); return t && findAdset(t.adset); });
-  // A sale tagged with a WORLD ad set counts in the World region, not its card country's region.
-  for (const s of sales) {
-    if (adsetRegion(findAdset(parseRef(s.ref).adset)) === 'world') s.region = 'world';
-  }
+  // A tagged sale counts in the region of the ad set it was tagged with, whatever its card
+  // country. Card country is used only when there is no ad tag (PayPal, untagged trials).
+  for (const s of sales) s.region = adsetRegion(findAdset(parseRef(s.ref).adset));
+  // Own-link sales: the tagged ad set's region, or else the link's ad set's region.
+  ADSET_LINKS.forEach((x, i) => {
+    for (const s of ownSales[i] || []) {
+      const t = parseRef(s.ref);
+      s.region = adsetRegion((t && findAdset(t.adset)) || x.adset);
+    }
+  });
 
   const regions = {};
   for (const k of Object.keys(REGIONS)) {
