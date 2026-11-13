@@ -35,6 +35,7 @@ import { chatWithData } from './chat.js';
 import { warmMembers, syncMembers, buildMembers, getMembersMeta, SOURCES } from './members.js';
 import { hasWriteKey, listTemplates, createTaggedLinks, savedLinks, deactivateLink } from './source-links.js';
 import { buildAdsReport, clearAdsCache } from './ads.js';
+import { getSetupCheck, runSetupCheck } from './setup-check.js';
 import { startCron } from './cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -123,6 +124,16 @@ app.get('/api/ads', auth, async (req, res) => {
     res.json(await buildAdsReport(String(req.query.since || ''), String(req.query.until || '')));
   } catch (err) {
     console.error('[/api/ads] failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Setup check: are all active ads and their sales pages tagged? (?fresh=1 runs it now)
+app.get('/api/setup-check', auth, async (req, res) => {
+  try {
+    res.json(req.query.fresh === '1' ? await runSetupCheck() : await getSetupCheck());
+  } catch (err) {
+    console.error('[/api/setup-check] failed:', err);
     res.status(500).json({ error: err.message });
   }
 });

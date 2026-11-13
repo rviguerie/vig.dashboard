@@ -164,6 +164,7 @@ details.how .note{font-style:normal}
   </div>
 </div>
 
+<div id="setup-check"></div>
 <div id="dashboard" style="display:none">
   <div class="filter-bar">
     <div class="filter-group">
@@ -409,6 +410,7 @@ if (!cfg || !cfg.apiKey) {
     if (!user) { location.href = '/login'; return; }
     document.getElementById('user-pill').textContent = user.email;
     loadCharges();
+    window.mvSetupCheck && window.mvSetupCheck(authFetch);
   });
 }
 
@@ -1115,5 +1117,6 @@ async function sendChat() {
 $send.addEventListener('click', sendChat);
 $input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
 </script>
+<script src="/setup-check.js"></script>
 </body>
 </html>

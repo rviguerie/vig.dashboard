@@ -9,6 +9,7 @@ import cron from 'node-cron';
 import { refreshFromStripe } from './stripe-refresh.js';
 import { refreshPayPal } from './paypal-refresh.js';
 import { syncMembers } from './members.js';
+import { runSetupCheck } from './setup-check.js';
 
 const DEFAULT_SCHEDULE = '0 * * * *'; // top of every hour
 
@@ -38,6 +39,7 @@ export function startCron() {
     } catch (err) {
       console.error('[cron] member sync failed:', err);
     }
+    await runSetupCheck(); // never throws; result shows on /ads and the main dashboard
   });
 
   console.log(`[cron] scheduled Stripe + PayPal refresh on "${expr}"`);

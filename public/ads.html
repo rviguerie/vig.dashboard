@@ -121,6 +121,7 @@ td.meta{color:#374151}
   </div>
 </div>
 
+<div id="setup-check"></div>
 <div class="warn-box" id="warn-box"></div>
 
 <div class="filter-bar">
@@ -256,6 +257,7 @@ if (!cfg || !cfg.apiKey) {
     if (!user) { location.href = '/login'; return; }
     document.getElementById('user-pill').textContent = user.email;
     setRange(7);
+    window.mvSetupCheck && window.mvSetupCheck(authFetch);
   });
 }
 document.getElementById('signout-btn').addEventListener('click', () => {
@@ -554,5 +556,6 @@ document.querySelectorAll('.preset').forEach((el) => el.addEventListener('click'
   setRange(['today', 'yesterday', 'campaign'].includes(d) ? d : parseInt(d, 10));
 }));
 </script>
+<script src="/setup-check.js"></script>
 </body>
 </html>
