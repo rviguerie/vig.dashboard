@@ -257,7 +257,7 @@ async function getSubscription(id) {
   });
   if (!res.ok) throw new Error(`PayPal subscription ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const j = await res.json();
-  const sub = { plan_id: j.plan_id, create_time: j.create_time, start_time: j.start_time, subscriber: j.subscriber };
+  const sub = { plan_id: j.plan_id, create_time: j.create_time, start_time: j.start_time, subscriber: j.subscriber, custom_id: j.custom_id || '' };
   subCache.set(id, sub);
   return sub;
 }
@@ -265,7 +265,9 @@ async function getSubscription(id) {
 /**
  * New PayPal subscribers of `planIds` whose subscription started in
  * [from, to) (unix seconds) and who paid in that range. One per payer.
- * Returns { sales: [{ country, email, subscription, created }], warnings }.
+ * Returns { sales: [{ country, email, subscription, created, ref }], warnings }.
+ * `ref` is the ad tag the sales page put in the subscription's custom_id
+ * ("<ad set id>__<ad id>", same as Stripe's client_reference_id), or ''.
  * PayPal's transaction data runs about 3 hours behind.
  */
 export async function paypalPlanSales(from, to, planIds) {
@@ -337,7 +339,7 @@ export async function paypalPlanSales(from, to, planIds) {
     if (seen.has(ident)) continue;
     seen.add(ident);
     const country = p.country || (sub.subscriber?.shipping_address?.address?.country_code || '').toUpperCase();
-    sales.push({ country, email, subscription: id, created: p.created });
+    sales.push({ country, email, subscription: id, created: p.created, ref: sub.custom_id || '' });
   }
   if (planCheckFailed) {
     warnings.push(`Could not read ${planCheckFailed} PayPal subscription(s), so they are not counted. The PayPal app may need the Subscriptions permission.`);

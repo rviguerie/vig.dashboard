@@ -357,11 +357,11 @@ function render(data) {
           `<td>${money(a.spend)}</td>` +
           (a.stripe ? stripeCells(a.stripe) : '<td colspan="7" class="zero" style="text-align:left">No Stripe sales assigned to this ad set</td>') + `<td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
       }
-      if (r.paypal) {
-        // PayPal can't be tied to one ad set, so Eastern Europe's PayPal sales get their own row.
+      if (r.paypalUntagged) {
+        // PayPal sales without an ad tag (old PayPal link) can't be tied to one ad set, so they get their own row.
         const pc = Object.entries(r.paypalCountries || {}).sort((a, b) => b[1] - a[1]);
-        rows += `<tr class="group"><td>PayPal · any Eastern Europe ad set<div class="countries">PayPal can't tell which ad set${pc.length ? ' · by PayPal country: ' + pc.map(([c, n]) => `${esc(c)} ${n}`).join(', ') : ''}</div></td>` +
-          `<td class="zero">—</td>${num(0)}${num(r.paypal)}<td class="zero">—</td>${num(0)}${num(0)}${num(0)}${num(r.paypal)}<td class="meta">—</td></tr>`;
+        rows += `<tr class="group"><td>PayPal · any Eastern Europe ad set<div class="countries">No ad tag, so it can't tell which ad set${pc.length ? ' · by PayPal country: ' + pc.map(([c, n]) => `${esc(c)} ${n}`).join(', ') : ''}</div></td>` +
+          `<td class="zero">—</td>${num(0)}${num(r.paypalUntagged)}<td class="zero">—</td>${num(0)}${num(0)}${num(0)}${num(r.paypalUntagged)}<td class="meta">—</td></tr>`;
       }
       continue;
     }
@@ -390,7 +390,7 @@ function render(data) {
     '<strong>Paid trials</strong>: of those, the ones whose first €39 invoice was paid, even if that was after the end date. ' +
     '<strong>Still in trial</strong>: trial not over yet.<br>' +
     `<strong>PayPal sales</strong>: new PayPal subscriptions to the €39 plan on the sales pages (${esc((data.links?.paypalPlans || []).join(', '))}) that started and paid in the date range, one per payer. ` +
-    'PayPal can\'t carry an ad tag, so they are split by the payer\'s PayPal country, not by ad set. In Eastern Europe they get their own row. PayPal data runs about 3 hours behind.<br>' +
+    'When the sales page\'s PayPal button saved the ad tag in the subscription, the sale goes to that ad set. Without a tag (the old PayPal link) they are split by the payer\'s PayPal country, not by ad set; in Eastern Europe those get their own row. PayPal data runs about 3 hours behind.<br>' +
     '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + PayPal sales + paid trials). The total leaves out "Other countries", since no ad set targets them.';
   renderByAd(data);
   renderDictionary(data.dictionary);

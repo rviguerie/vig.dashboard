@@ -89,8 +89,9 @@ import { buildDictionarySection } from './ads-dictionary.js';
 import { paypalPlanSales } from './paypal-refresh.js';
 
 // PayPal plan on the €39 sales pages (english.mrvig.com/amazing, /one-thing, /one-thing-img).
-// PayPal can't carry an ad tag, so these sales go to a region by the payer's
-// PayPal country, not to an ad set.
+// When the sales page's PayPal button saves the ad tag in the subscription's custom_id,
+// the sale goes to that ad set (like a tagged Stripe sale). Without a tag (old PayPal
+// link) it goes to a region by the payer's PayPal country, not to an ad set.
 const PAYPAL_PLANS = ['P-7DC78955SS332610WNH6M4JI'];
 
 const cache = new Map(); // "since|until" → { at, data }
@@ -453,9 +454,25 @@ export async function buildAdsReport(since, until) {
     }
   }
   warnings.push(...(paypal.warnings || []));
+  const paypalByAdset = new Map(); // normName(ad set) → { name, n, countries }
   for (const p of paypal.sales || []) {
+    const t = parseRef(p.ref);
+    const target = t && findAdset(t.adset);
+    if (target) {
+      // Tagged PayPal sale: goes to the tagged ad set and its region, whatever the PayPal country.
+      const r = regions[adsetRegion(target)];
+      r.paypal++;
+      bump(r.countries, p.country);
+      let x = paypalByAdset.get(normName(target));
+      if (!x) { x = { name: target, n: 0, countries: {} }; paypalByAdset.set(normName(target), x); }
+      x.n++;
+      bump(x.countries, p.country);
+      tagged.push({ adset: target, ad: t.ad, sale: p });
+      continue;
+    }
     const r = regions[regionOf(p.country)];
     r.paypal++;
+    r.paypalUntagged = (r.paypalUntagged || 0) + 1;
     bump(r.countries, p.country);
     bump(r.paypalCountries, p.country);
   }
@@ -507,6 +524,19 @@ export async function buildAdsReport(since, until) {
       ? { sales: eeShared, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: ee.salesCountries }
       : { sales: 0, trials: ee.trials, paidTrials: ee.paidTrials, inTrial: ee.inTrial, pendingTrials: ee.pendingTrials, countries: ee.trialCountries };
     st.paying = st.sales + st.paidTrials;
+    st.costPerPaying = st.paying && a.spend ? a.spend / st.paying : null;
+    a.stripe = st;
+  }
+
+  // Tagged PayPal sales go into their ad set's own numbers.
+  for (const x of paypalByAdset.values()) {
+    let a = adsets.find((y) => sameName(y.name, x.name));
+    if (!a) { a = { id: '', name: x.name, region: adsetRegion(x.name), spend: 0, metaPurchases: 0 }; adsets.push(a); }
+    const st = a.stripe || { sales: 0, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: {}, paying: 0 };
+    st.countries = { ...(st.countries || {}) };
+    for (const [c, n] of Object.entries(x.countries)) st.countries[c] = (st.countries[c] || 0) + n;
+    st.paypal = (st.paypal || 0) + x.n;
+    st.paying = (st.sales || 0) + st.paypal + (st.paidTrials || 0);
     st.costPerPaying = st.paying && a.spend ? a.spend / st.paying : null;
     a.stripe = st;
   }
