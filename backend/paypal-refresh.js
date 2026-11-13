@@ -35,7 +35,7 @@ const isoNoMs = (d) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 let cachedToken = null;
 let tokenExpiry = 0;
 
-async function getAccessToken() {
+export async function getAccessToken() {
   if (cachedToken && Date.now() < tokenExpiry - 60000) return cachedToken;
   const id = process.env.PAYPAL_CLIENT_ID;
   const secret = process.env.PAYPAL_CLIENT_SECRET;

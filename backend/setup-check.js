@@ -7,8 +7,8 @@
  *   2. Every sales page those ads send people to (mrvig.com pages) is fetched:
  *        - a page with a Stripe link (buy.stripe.com) must have the Stripe
  *          ad-tag script (sets client_reference_id)
- *        - a page with the PayPal subscribe link must have the PayPal button
- *          script (saves the ad tag in custom_id)
+ *        - a page with the PayPal subscribe link must have the PayPal ad-tag
+ *          script (sends the click through /pay/paypal, which saves the tag in custom_id)
  *
  * Result: { checkedAt, problems: [{ level: 'red'|'yellow', what, where }], ads, pages }.
  * 'red' = sales from this ad or page will be missing from /ads. 'yellow' = could not check.
@@ -17,7 +17,7 @@
 import { metaAll, AD_ACCOUNT } from './ads.js';
 
 const STRIPE_TAG = 'client_reference_id';   // in the Stripe ad-tag script
-const PAYPAL_TAG = 'mvPayPalStarted';       // in the PayPal button script
+const PAYPAL_TAGS = ['mvPayPalLink', 'mvPayPalStarted']; // PayPal image-link script (or the older PayPal button script)
 const STRIPE_LINK = 'buy.stripe.com';
 const PAYPAL_LINK = 'paypal.com/webapps/billing/plans/subscribe';
 const CHECKED_HOSTS = /(^|\.)mrvig\.com$/i; // only our own pages are fetched
@@ -61,7 +61,7 @@ async function checkPage(url) {
     stripeLink: html.includes(STRIPE_LINK),
     stripeTag: html.includes(STRIPE_TAG),
     paypalLink: html.includes(PAYPAL_LINK),
-    paypalTag: html.includes(PAYPAL_TAG),
+    paypalTag: PAYPAL_TAGS.some((t) => html.includes(t)),
   };
 }
 
@@ -108,7 +108,7 @@ async function run() {
       pageResults.push({ ...p, ...r });
       const used = `${p.url} (used by ${p.ads.length} active ad${p.ads.length === 1 ? '' : 's'})`;
       if (r.stripeLink && !r.stripeTag) problems.push({ level: 'red', what: 'Sales page has a Stripe link but no Stripe ad-tag script. Its card sales will be missing from the ad results.', where: used });
-      if (r.paypalLink && !r.paypalTag) problems.push({ level: 'red', what: 'Sales page has the old PayPal link but no PayPal button script. Its PayPal sales cannot be matched to an ad set.', where: used });
+      if (r.paypalLink && !r.paypalTag) problems.push({ level: 'red', what: 'Sales page has a PayPal link but no PayPal ad-tag script. Its PayPal sales cannot be matched to an ad set.', where: used });
     } catch (err) {
       pageResults.push({ ...p, error: err.message });
       problems.push({ level: 'yellow', what: `Could not open this sales page (${err.message}).`, where: p.url });

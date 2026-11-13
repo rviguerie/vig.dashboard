@@ -36,6 +36,7 @@ import { warmMembers, syncMembers, buildMembers, getMembersMeta, SOURCES } from 
 import { hasWriteKey, listTemplates, createTaggedLinks, savedLinks, deactivateLink } from './source-links.js';
 import { buildAdsReport, clearAdsCache } from './ads.js';
 import { getSetupCheck, runSetupCheck } from './setup-check.js';
+import { paypalLinkHandler } from './paypal-link.js';
 import { startCron } from './cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,9 @@ app.get('/firebase-config.js', (_req, res) => {
   res.type('application/javascript');
   res.send(`window.FIREBASE_CONFIG = ${JSON.stringify(config)};\n`);
 });
+
+// PayPal checkout with the ad tag (public: called by the sales pages' PayPal image link).
+app.get('/pay/paypal', paypalLinkHandler);
 
 // ─── Protected API ───────────────────────────────────────────────────
 
