@@ -153,7 +153,7 @@ td.meta{color:#374151}
       <table>
         <thead><tr>
           <th>Ad set / card country group</th><th>Spend</th>
-          <th>€39 sales<br>(Stripe)</th><th>PayPal<br>sales</th><th>Cost per paying customer</th><th>Days<br>running</th><th>Days since last<br>budget increase</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
+          <th>€39 sales<br>(Stripe)</th><th>PayPal<br>sales</th><th>Cost per paying customer</th><th>Days<br>running</th><th>Days since<br>last change</th><th>Days since last<br>budget increase</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
           <th>Paying customers</th><th>Meta purchases<br>(not counted)</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -339,13 +339,17 @@ function render(data) {
   ].map(([l, v, s]) => `<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${v}</div><div class="metric-sub">${s}</div></div>`).join('');
 
   // dayCells: '' for group rows; for an ad set, its days running and days since the last budget increase.
-  const blankDays = '<td></td><td></td>';
+  const blankDays = '<td></td><td></td><td></td>';
   const dayCells = (a) => {
     if (!a) return blankDays;
     const run = a.daysRunning == null ? '<td class="zero">—</td>' : `<td>${fmt(a.daysRunning)}</td>`;
+    // Under 7 days since the last edit: too early to judge, shown in amber.
+    const chg = a.daysSinceChange == null
+      ? `<td class="zero" title="${a.timingKnown ? 'No edit found in Meta\'s activity log' : 'Not found in Meta'}">${a.timingKnown ? 'none' : '—'}</td>`
+      : `<td${a.daysSinceChange < 7 ? ' style="color:#b45309;font-weight:600" title="Changed less than 7 days ago: too early to judge"' : ''}>${fmt(a.daysSinceChange)}</td>`;
     const inc = a.daysSinceIncrease != null ? `<td>${fmt(a.daysSinceIncrease)}</td>`
       : `<td class="zero" title="${a.timingKnown ? 'No budget increase found' : 'Not found in Meta'}">${a.timingKnown ? 'none' : '—'}</td>`;
-    return run + inc;
+    return run + chg + inc;
   };
   const stripeCells = (r, a) => num(r.sales) + num(r.paypal) + `<td>${money(r.costPerPaying)}</td>` + dayCells(a) +
     num(r.trials) + num(r.paidTrials) + num(r.inTrial) + num(r.paying);
@@ -395,7 +399,7 @@ function render(data) {
     `<strong>PayPal sales</strong>: new PayPal subscriptions to the €39 plan on the sales pages (${esc((data.links?.paypalPlans || []).join(', '))}) that started and paid in the date range, one per payer. ` +
     'When the sales page\'s PayPal button saved the ad tag in the subscription, the sale goes to that ad set. Without a tag (the old PayPal link) they are split by the payer\'s PayPal country, not by ad set; in Eastern Europe those get their own row. PayPal data runs about 3 hours behind.<br>' +
     '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + PayPal sales + paid trials). The total leaves out "Other countries", since no ad set targets them.<br>' +
-    '<strong>Days running</strong>: days since the ad set\'s start date in Meta. <strong>Days since last budget increase</strong>: days since the ad set\'s budget was last raised, from Meta\'s activity log (the campaign budget if the ad set has no budget of its own). "none" = no increase found.';
+    '<strong>Days running</strong>: days since the ad set\'s start date in Meta. <strong>Days since last change</strong>: days since the ad set was last edited in any way (audience, budget, pause…), from Meta\'s activity log; under 7 is shown in amber = too early to judge. <strong>Days since last budget increase</strong>: days since the ad set\'s budget was last raised, from Meta\'s activity log (the campaign budget if the ad set has no budget of its own). "none" = no increase found.';
   renderByAd(data);
   renderDictionary(data.dictionary);
   renderAbTest(data.dictionary?.abTest);

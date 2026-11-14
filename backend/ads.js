@@ -234,7 +234,8 @@ async function metaAds(since, until, campaign) {
  * Per ad set of CAMPAIGN: when it started, and when its budget was last raised
  * (from the ad account's activity log). If the ad set has no budget of its own
  * (campaign budget), the campaign's last budget increase is used.
- * Returns Map(ad set id or normName) → { startTime, lastIncrease } (unix seconds).
+ * lastChange = the ad set's latest edit of any kind (audience, budget, status…) in the activity log.
+ * Returns Map(ad set id or normName) → { startTime, lastIncrease, lastChange } (unix seconds).
  */
 async function metaAdsetTiming() {
   const sets = await metaAll(`${AD_ACCOUNT}/adsets`, {
@@ -245,6 +246,7 @@ async function metaAdsetTiming() {
   const toSec = (t) => (t ? Math.floor(new Date(t).getTime() / 1000) : null);
   const earliest = Math.min(...sets.map((a) => toSec(a.created_time) || toSec(a.start_time) || Infinity));
   const lastIncrease = new Map(); // object id → unix seconds
+  const lastChange = new Map();   // object id → unix seconds of its latest edit of any kind
   if (Number.isFinite(earliest)) {
     const events = await metaAll(`${AD_ACCOUNT}/activities`, {
       fields: 'event_type,event_time,object_id,extra_data',
@@ -259,6 +261,9 @@ async function metaAdsetTiming() {
       return null;
     };
     for (const e of events) {
+      const ct = toSec(e.event_time);
+      const cid = String(e.object_id || '');
+      if (ct && cid && ct > (lastChange.get(cid) || 0)) lastChange.set(cid, ct);
       if (!/budget/i.test(e.event_type || '')) continue;
       let x;
       try { x = JSON.parse(e.extra_data || '{}'); } catch { continue; }
@@ -276,6 +281,7 @@ async function metaAdsetTiming() {
     const info = {
       startTime: toSec(a.start_time) || toSec(a.created_time),
       lastIncrease: lastIncrease.get(String(a.id)) || (!ownBudget && lastIncrease.get(String(a.campaign_id))) || null,
+      lastChange: lastChange.get(String(a.id)) || null,
     };
     out.set(String(a.id), info);
     out.set(normName(a.name), info);
@@ -626,6 +632,7 @@ export async function buildAdsReport(since, until) {
     const t = timing.get(String(a.id)) || timing.get(normName(a.name));
     a.daysRunning = t?.startTime ? Math.max(0, Math.floor((nowSec - t.startTime) / DAY)) : null;
     a.daysSinceIncrease = t?.lastIncrease ? Math.max(0, Math.floor((nowSec - t.lastIncrease) / DAY)) : null;
+    a.daysSinceChange = t?.lastChange ? Math.max(0, Math.floor((nowSec - t.lastChange) / DAY)) : null;
     a.timingKnown = !!t;
   }
 
