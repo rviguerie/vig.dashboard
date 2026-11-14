@@ -388,7 +388,7 @@ function render(data) {
   document.getElementById('note').innerHTML =
     'Spend and Meta purchases come from Meta. Meta purchases are Meta\'s own count and are not used anywhere else on this page. ' +
     'Everything else comes from the main Stripe account ("Mr. Vig - Kartra"). A sale with an ad tag goes to the ad set it was tagged with, whatever the card country. Sales without an ad tag (PayPal, trials) are split by country: ' +
-    'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (trials go to Test B - E_EUROPE_COLD_AMAZING - Free Trial) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY · World = ad sets with WORLD in the name; they get only the €39 sales tagged with them, from any card country.<br>' +
+    'Eastern Europe = BG, CZ, HR, HU, LT, LV, PL, RO, SK, UA (trials go to Test B - E_EUROPE_COLD_AMAZING - Free Trial) · W_EUROPE = DE, AT, CH, NL, BE, FR, LU · S_EUROPE = ES, PT, IT, GR, CY · Anglo = US, GB, CA, IE, NZ, AU (ad sets with ANGLO in the name) · World = ad sets with WORLD in the name; they get only the €39 sales tagged with them, from any card country.<br>' +
     `Only these Stripe payment links count; every other €39 payment and trial is ignored. ` +
     `<strong>€39 sales</strong>: paid checkouts of the €39 link (${esc(data.links?.direct || '')}) in the date range, one per customer, counted only when the sales page tagged the sale with an ad set of this campaign (it then goes to that ad set).<br>` +
     ((data.links?.adsets || []).length ? 'Ad sets with their own €39 link get only the sales from that link (any card country), unless the sales page tagged them with another ad set: ' +

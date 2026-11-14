@@ -11,6 +11,7 @@
  *   ee      BG CZ HR HU LT LV PL RO SK UA   → the Eastern Europe A/B test ad sets
  *   w_eu    DE AT CH NL BE FR LU            → the W_EUROPE ad set
  *   s_eu    ES PT IT GR CY                  → the S_EUROPE ad set
+ *   anglo   US GB CA IE NZ AU               → ad sets with ANGLO in the name
  *   world   ad sets with WORLD in the name   → only the sales tagged with them (any country)
  *   other   every other country
  *
@@ -51,6 +52,7 @@ export const REGIONS = {
   ee: { label: 'Eastern Europe (A/B test)', countries: ['BG', 'CZ', 'HR', 'HU', 'LT', 'LV', 'PL', 'RO', 'SK', 'UA'] },
   w_eu: { label: 'Western Europe (W_EUROPE)', countries: ['DE', 'AT', 'CH', 'NL', 'BE', 'FR', 'LU'] },
   s_eu: { label: 'Southern Europe (S_EUROPE)', countries: ['ES', 'PT', 'IT', 'GR', 'CY'] },
+  anglo: { label: 'Anglo (ANGLO)', countries: ['US', 'GB', 'CA', 'IE', 'NZ', 'AU'] },
   // WORLD ad sets target every country, so their sales are the ones tagged with them (any card country).
   world: { label: 'World (WORLD)', countries: [] },
   other: { label: 'Other countries (no ad set)', countries: [] },
@@ -65,6 +67,7 @@ const adsetRegion = (name) => {
   if (/world/i.test(name || '')) return 'world';
   if (/w[_\s-]?europe/i.test(name || '')) return 'w_eu';
   if (/s[_\s-]?europe/i.test(name || '')) return 's_eu';
+  if (/anglo/i.test(name || '')) return 'anglo';
   return 'ee';
 };
 
