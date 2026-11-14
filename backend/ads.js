@@ -230,6 +230,59 @@ async function metaAds(since, until, campaign) {
   }));
 }
 
+/**
+ * Per ad set of CAMPAIGN: when it started, and when its budget was last raised
+ * (from the ad account's activity log). If the ad set has no budget of its own
+ * (campaign budget), the campaign's last budget increase is used.
+ * Returns Map(ad set id or normName) → { startTime, lastIncrease } (unix seconds).
+ */
+async function metaAdsetTiming() {
+  const sets = await metaAll(`${AD_ACCOUNT}/adsets`, {
+    fields: 'id,name,campaign_id,start_time,created_time,daily_budget,lifetime_budget',
+    filtering: JSON.stringify([{ field: 'campaign.name', operator: 'EQUAL', value: CAMPAIGN }]),
+    limit: '500',
+  });
+  const toSec = (t) => (t ? Math.floor(new Date(t).getTime() / 1000) : null);
+  const earliest = Math.min(...sets.map((a) => toSec(a.created_time) || toSec(a.start_time) || Infinity));
+  const lastIncrease = new Map(); // object id → unix seconds
+  if (Number.isFinite(earliest)) {
+    const events = await metaAll(`${AD_ACCOUNT}/activities`, {
+      fields: 'event_type,event_time,object_id,extra_data',
+      since: String(earliest - DAY),
+      limit: '500',
+    });
+    // extra_data is a JSON string with the old and new budget; its shape varies, so dig for the numbers.
+    const amount = (v) => {
+      if (v == null) return null;
+      if (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && !isNaN(v))) return Number(v);
+      if (typeof v === 'object') for (const k of ['new_value', 'old_value', 'value', 'amount']) { const n = amount(v[k]); if (n != null) return n; }
+      return null;
+    };
+    for (const e of events) {
+      if (!/budget/i.test(e.event_type || '')) continue;
+      let x;
+      try { x = JSON.parse(e.extra_data || '{}'); } catch { continue; }
+      const oldV = amount(x.old_value?.old_value ?? x.old_value);
+      const newV = amount(x.new_value?.new_value ?? x.new_value);
+      if (oldV == null || newV == null || !(newV > oldV)) continue;
+      const t = toSec(e.event_time);
+      const id = String(e.object_id || '');
+      if (t && id && t > (lastIncrease.get(id) || 0)) lastIncrease.set(id, t);
+    }
+  }
+  const out = new Map();
+  for (const a of sets) {
+    const ownBudget = Number(a.daily_budget) > 0 || Number(a.lifetime_budget) > 0;
+    const info = {
+      startTime: toSec(a.start_time) || toSec(a.created_time),
+      lastIncrease: lastIncrease.get(String(a.id)) || (!ownBudget && lastIncrease.get(String(a.campaign_id))) || null,
+    };
+    out.set(String(a.id), info);
+    out.set(normName(a.name), info);
+  }
+  return out;
+}
+
 async function metaAdsets(since, until) {
   return (await metaInsights(since, until, CAMPAIGN)).map((a) => ({ ...a, region: adsetRegion(a.name) }));
 }
@@ -336,11 +389,20 @@ export async function buildAdsReport(since, until) {
   let account = null;
   let adsets = [];
   let metaAdRows = [];
+  let timing = new Map();
   if (!hasMeta) warnings.push('META_ACCESS_TOKEN is not set in Railway, so spend and Meta purchases are missing.');
   else {
     try {
       account = await metaAccount();
-      [adsets, metaAdRows] = await Promise.all([metaAdsets(since, until), metaAds(since, until, CAMPAIGN)]);
+      [adsets, metaAdRows, timing] = await Promise.all([
+        metaAdsets(since, until),
+        metaAds(since, until, CAMPAIGN),
+        metaAdsetTiming().catch((err) => {
+          console.error('[ads] ad set timing failed:', err.message);
+          warnings.push('Could not read ad set start dates or budget changes from Meta: ' + err.message);
+          return new Map();
+        }),
+      ]);
     } catch (err) {
       console.error('[ads] Meta failed:', err.message);
       warnings.push('Could not read Meta: ' + err.message);
@@ -512,7 +574,8 @@ export async function buildAdsReport(since, until) {
       a.stripe = st;
       continue;
     }
-    if (a.region === 'world') {
+    // Outside the Eastern Europe A/B test, an ad set gets only the sales tagged with it.
+    if (a.region !== 'ee') {
       a.stripe = { sales: 0, trials: 0, paidTrials: 0, inTrial: 0, pendingTrials: 0, countries: {}, paying: 0, costPerPaying: null };
       continue;
     }
@@ -556,6 +619,15 @@ export async function buildAdsReport(since, until) {
   untaggedAdSales += untaggedShared;
   const taggedAdsets = [...new Set(tagged.map((t) => normName(t.adset)))];
   ads.sort((a, b) => a.adset.localeCompare(b.adset) || b.spend - a.spend);
+
+  // Days running and days since the last budget increase, counted to now.
+  const nowSec = Date.now() / 1000;
+  for (const a of adsets) {
+    const t = timing.get(String(a.id)) || timing.get(normName(a.name));
+    a.daysRunning = t?.startTime ? Math.max(0, Math.floor((nowSec - t.startTime) / DAY)) : null;
+    a.daysSinceIncrease = t?.lastIncrease ? Math.max(0, Math.floor((nowSec - t.lastIncrease) / DAY)) : null;
+    a.timingKnown = !!t;
+  }
 
   const data = {
     campaign: CAMPAIGN,

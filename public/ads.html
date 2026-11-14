@@ -153,7 +153,7 @@ td.meta{color:#374151}
       <table>
         <thead><tr>
           <th>Ad set / card country group</th><th>Spend</th>
-          <th>€39 sales<br>(Stripe)</th><th>PayPal<br>sales</th><th>Cost per paying customer</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
+          <th>€39 sales<br>(Stripe)</th><th>PayPal<br>sales</th><th>Cost per paying customer</th><th>Days<br>running</th><th>Days since last<br>budget increase</th><th>Trials</th><th>Paid trials</th><th>Still in trial</th>
           <th>Paying customers</th><th>Meta purchases<br>(not counted)</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -338,45 +338,46 @@ function render(data) {
     ['Meta purchases', fmt(tot.metaPurchases), 'Meta\'s own count · not used'],
   ].map(([l, v, s]) => `<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${v}</div><div class="metric-sub">${s}</div></div>`).join('');
 
-  const stripeCells = (r) => num(r.sales) + num(r.paypal) + `<td>${money(r.costPerPaying)}</td>` +
+  // dayCells: '' for group rows; for an ad set, its days running and days since the last budget increase.
+  const blankDays = '<td></td><td></td>';
+  const dayCells = (a) => {
+    if (!a) return blankDays;
+    const run = a.daysRunning == null ? '<td class="zero">—</td>' : `<td>${fmt(a.daysRunning)}</td>`;
+    const inc = a.daysSinceIncrease != null ? `<td>${fmt(a.daysSinceIncrease)}</td>`
+      : `<td class="zero" title="${a.timingKnown ? 'No budget increase found' : 'Not found in Meta'}">${a.timingKnown ? 'none' : '—'}</td>`;
+    return run + inc;
+  };
+  const stripeCells = (r, a) => num(r.sales) + num(r.paypal) + `<td>${money(r.costPerPaying)}</td>` + dayCells(a) +
     num(r.trials) + num(r.paidTrials) + num(r.inTrial) + num(r.paying);
   const countries = (r) => {
     const c = Object.entries(r.countries || {}).sort((a, b) => b[1] - a[1]);
     return c.length ? `<div class="countries">Paying by country: ${c.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : '';
   };
+  // Short region names for the group rows.
+  const regionName = { ee: 'Eastern Europe', w_eu: 'Western Europe', s_eu: 'Southern Europe', world: 'World', other: 'Other countries (no ad set)' };
   let rows = '';
   for (const [k, r] of regs) {
     const sets = data.adsets.filter((a) => a.region === k);
-    if (sets.length === 1) {
-      rows += `<tr class="group"><td>${esc(sets[0].name)}<div class="countries">${esc(r.label)}</div>${countries(r)}</td>` +
-        `<td>${money(r.spend)}</td>${stripeCells(r)}<td class="meta">${fmt(r.metaPurchases)}</td></tr>`;
-      continue;
-    }
-    if (k === 'ee') {
-      // A/B test: each ad set gets only its own Stripe numbers (not combined).
-      for (const a of sets) {
-        rows += `<tr class="group"><td>${esc(a.name)}<div class="countries">${esc(r.label)}</div>${a.stripe ? countries(a.stripe) : ''}</td>` +
-          `<td>${money(a.spend)}</td>` +
-          (a.stripe ? stripeCells(a.stripe) : '<td colspan="7" class="zero" style="text-align:left">No Stripe sales assigned to this ad set</td>') + `<td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
-      }
-      if (r.paypalUntagged) {
-        // PayPal sales without an ad tag (old PayPal link) can't be tied to one ad set, so they get their own row.
-        const pc = Object.entries(r.paypalCountries || {}).sort((a, b) => b[1] - a[1]);
-        rows += `<tr class="group"><td>PayPal · any Eastern Europe ad set<div class="countries">No ad tag, so it can't tell which ad set${pc.length ? ' · by PayPal country: ' + pc.map(([c, n]) => `${esc(c)} ${n}`).join(', ') : ''}</div></td>` +
-          `<td class="zero">—</td>${num(0)}${num(r.paypalUntagged)}<td class="zero">—</td>${num(0)}${num(0)}${num(0)}${num(r.paypalUntagged)}<td class="meta">—</td></tr>`;
-      }
-      continue;
-    }
-    rows += `<tr class="group"><td>${esc(r.label)}${sets.length ? ` · ${sets.length} ad sets` : ''}${countries(r)}</td>` +
+    const name = regionName[k] || r.label;
+    // Group row: the region's totals.
+    rows += `<tr class="group"><td>${esc(name)}${sets.length ? ` · ${sets.length} ad set${sets.length === 1 ? '' : 's'}` : ''}${countries(r)}</td>` +
       `<td>${k === 'other' && !r.spend ? '—' : money(r.spend)}</td>${stripeCells(r)}<td class="meta">${k === 'other' && !r.metaPurchases ? '—' : fmt(r.metaPurchases)}</td></tr>`;
+    // Ad set rows: each ad set's own numbers.
     for (const a of sets) {
       rows += `<tr class="adset"><td>${esc(a.name)}${a.stripe ? countries(a.stripe) : ''}</td><td>${money(a.spend)}</td>` +
-        (a.stripe ? stripeCells(a.stripe)
-          : '<td colspan="7" class="zero" style="text-align:left">Stripe can\'t tell these ad sets apart (same countries) · see the group row</td>') + `<td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
+        (a.stripe ? stripeCells(a.stripe, a)
+          : `<td colspan="3" class="zero" style="text-align:left">No sales assigned to this ad set</td>${dayCells(a)}<td colspan="4"></td>`) +
+        `<td class="meta">${fmt(a.metaPurchases)}</td></tr>`;
+    }
+    if (r.paypalUntagged && sets.length) {
+      // PayPal sales without an ad tag (old PayPal link) can't be tied to one ad set, so they get their own row.
+      const pc = Object.entries(r.paypalCountries || {}).sort((a, b) => b[1] - a[1]);
+      rows += `<tr class="adset"><td>PayPal · any ${esc(name)} ad set<div class="countries">No ad tag, so it can't tell which ad set${pc.length ? ' · by PayPal country: ' + pc.map(([c, n]) => `${esc(c)} ${n}`).join(', ') : ''}</div></td>` +
+        `<td class="zero">—</td>${num(0)}${num(r.paypalUntagged)}<td class="zero">—</td>${blankDays}${num(0)}${num(0)}${num(0)}${num(r.paypalUntagged)}<td class="meta">—</td></tr>`;
     }
   }
   rows += `<tr class="totals"><td>Total</td><td>${money(tot.spend)}</td>` +
-    num(tot.sales) + num(tot.paypal) + `<td>${money(adPaying && tot.spend ? tot.spend / adPaying : null)}</td>` +
+    num(tot.sales) + num(tot.paypal) + `<td>${money(adPaying && tot.spend ? tot.spend / adPaying : null)}</td>` + blankDays +
     num(tot.trials) + num(tot.paidTrials) + num(tot.inTrial) + num(tot.paying) + `<td class="meta">${fmt(tot.metaPurchases)}</td></tr>`;
   document.getElementById('tbody').innerHTML = rows;
 
@@ -393,7 +394,8 @@ function render(data) {
     '<strong>Still in trial</strong>: trial not over yet.<br>' +
     `<strong>PayPal sales</strong>: new PayPal subscriptions to the €39 plan on the sales pages (${esc((data.links?.paypalPlans || []).join(', '))}) that started and paid in the date range, one per payer. ` +
     'When the sales page\'s PayPal button saved the ad tag in the subscription, the sale goes to that ad set. Without a tag (the old PayPal link) they are split by the payer\'s PayPal country, not by ad set; in Eastern Europe those get their own row. PayPal data runs about 3 hours behind.<br>' +
-    '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + PayPal sales + paid trials). The total leaves out "Other countries", since no ad set targets them.';
+    '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + PayPal sales + paid trials). The total leaves out "Other countries", since no ad set targets them.<br>' +
+    '<strong>Days running</strong>: days since the ad set\'s start date in Meta. <strong>Days since last budget increase</strong>: days since the ad set\'s budget was last raised, from Meta\'s activity log (the campaign budget if the ad set has no budget of its own). "none" = no increase found.';
   renderByAd(data);
   renderDictionary(data.dictionary);
   renderAbTest(data.dictionary?.abTest);
