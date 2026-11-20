@@ -175,6 +175,34 @@ td.meta{color:#374151}
     <details class="how"><summary>How this is counted</summary><p class="note" id="byad-note"></p></details>
   </div>
 
+  <div class="campaign-title">Vig Village Reopen November 2026</div>
+  <div class="section">
+    <div class="sub-title">Totals<span class="section-sub">new Vig Village buyers in these dates</span></div>
+    <div class="warn-box" id="vv-warn"></div>
+    <div class="metric-grid" id="vv-metrics"></div>
+  </div>
+  <div class="section">
+    <div class="sub-title">By ad set</div>
+    <div class="chart-card table-wrap">
+      <table>
+        <thead><tr>
+          <th>Ad set</th><th>Spend</th><th>Buyers<br>(Stripe)</th><th>Buyers<br>(PayPal)</th><th>Revenue<br>(first payment)</th><th>ROAS</th><th>Cost per buyer</th><th>Meta purchases<br>(not counted)</th>
+        </tr></thead>
+        <tbody id="vv-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="section">
+    <div class="sub-title">Not from these ads<span class="section-sub">emails, links and other sources</span></div>
+    <div class="chart-card table-wrap">
+      <table>
+        <thead><tr><th>Source</th><th>Buyers<br>(Stripe)</th><th>Buyers<br>(PayPal)</th><th>Revenue<br>(first payment)</th></tr></thead>
+        <tbody id="vv-other-tbody"></tbody>
+      </table>
+    </div>
+    <details class="how"><summary>How this is counted</summary><p class="note" id="vv-note"></p></details>
+  </div>
+
   <div class="campaign-title">Atomic Dictionary - Cold - Ad Tests</div>
   <div class="section">
     <div class="sub-title">Totals</div>
@@ -316,7 +344,7 @@ function render(data) {
   currency = data.currency || 'EUR';
   document.getElementById('rate-group').style.display = currency === 'USD' ? '' : 'none';
   document.getElementById('subtitle').textContent =
-    `Campaigns "${data.campaign}" and "${data.dictionary?.campaign || 'Atomic Dictionary - Cold - Ad Tests'}" · ad account ${data.adAccount} · dates in ${data.timezone}`;
+    `Campaigns "${data.campaign}", "${data.vigVillage?.campaign || 'Vig Village Reopen November 2026'}" and "${data.dictionary?.campaign || 'Atomic Dictionary - Cold - Ad Tests'}" · ad account ${data.adAccount} · dates in ${data.timezone}`;
   document.getElementById('status-text').innerHTML =
     `<span class="status-dot"></span>${esc(data.since)} to ${esc(data.until)} · read at <strong>${esc(new Date(data.builtAt).toLocaleTimeString())}</strong>`;
   const wb = document.getElementById('warn-box');
@@ -401,6 +429,7 @@ function render(data) {
     '<strong>Cost per paying customer</strong> = spend ÷ (€39 sales + PayPal sales + paid trials). The total leaves out "Other countries", since no ad set targets them.<br>' +
     '<strong>Days running</strong>: days since the ad set\'s start date in Meta. <strong>Days since last change</strong>: days since the ad set was last edited in any way (audience, budget, pause…), from Meta\'s activity log; under 7 is shown in amber = too early to judge. <strong>Days since last budget increase</strong>: days since the ad set\'s budget was last raised, from Meta\'s activity log (the campaign budget if the ad set has no budget of its own). "none" = no increase found.';
   renderByAd(data);
+  renderVigVillage(data.vigVillage);
   renderDictionary(data.dictionary);
   renderAbTest(data.dictionary?.abTest);
   document.getElementById('page').style.display = 'block';
@@ -434,6 +463,47 @@ function renderByAd(data) {
 }
 // Ad sets whose ads carry the utm tags; shown in "By ad" even before their first sale.
 const TAGGED_ADSETS = ['e_europe_cold_over50_full-price', 'e_europe_cold_over50_images_full-price', 'w_europe_cold_images_full-price'];
+
+function renderVigVillage(v) {
+  const warn = document.getElementById('vv-warn');
+  const msgs = v ? (v.error ? ['Could not build this section: ' + v.error] : v.warnings || []) : ['No data for this campaign.'];
+  warn.innerHTML = msgs.map(esc).join('<br>');
+  warn.style.display = msgs.length ? 'block' : 'none';
+  const ids = ['vv-metrics', 'vv-tbody', 'vv-other-tbody', 'vv-note'];
+  if (!v || v.error) { ids.forEach((id) => { document.getElementById(id).innerHTML = ''; }); return; }
+  const t = v.total;
+  document.getElementById('vv-metrics').innerHTML = [
+    ['Spend', money(t.spend), 'Meta, this campaign'],
+    ['Buyers from these ads', fmt(t.adBuyers), 'tagged with an ad set of this campaign'],
+    ['Revenue from these ads', revenueUsd(t.adRevenue), 'first payments'],
+    ['ROAS', roas(t.adRevenue, t.spend), 'first payment ÷ spend'],
+    ['Cost per buyer', money(t.costPerBuyer), 'spend ÷ buyers from these ads'],
+    ['Buyers not from these ads', fmt(t.otherBuyers), `${revenueUsd(t.otherRevenue)} · emails and other sources`],
+    ['Meta purchases', fmt(t.metaPurchases), 'Meta\'s own count · not used'],
+  ].map(([l, val, sub]) => `<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${val}</div><div class="metric-sub">${sub}</div></div>`).join('');
+  const countries = (c) => { const e = Object.entries(c || {}).sort((a, b) => b[1] - a[1]); return e.length ? `<div class="countries">Buyers by country: ${e.map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : ''; };
+  document.getElementById('vv-tbody').innerHTML = v.adsets.length ? v.adsets.map((a) =>
+    `<tr class="group"><td>${esc(a.name)}${countries(a.countries)}</td><td>${money(a.spend)}</td>${num(a.stripe)}${num(a.paypal)}` +
+    `<td>${revenueUsd(a.revenue)}</td><td>${roas(a.revenue, a.spend)}</td><td>${money(a.costPerBuyer)}</td><td class="meta">${fmt(a.metaPurchases)}</td></tr>`).join('')
+    : '<tr><td colspan="8" class="zero">No spend in these dates.</td></tr>';
+  const n = v.notFromAds;
+  const pageLabel = (p) => `Page ${esc(p)} (no ad tag: emails, links)`;
+  const rows = [
+    ...Object.entries(n.pages).sort((a, b) => a[0].localeCompare(b[0])).map(([p, b]) => [pageLabel(p), b]),
+    ['No tag (page without the tag script, or other checkout links)', n.noTag],
+    ['Tagged with an ad set outside this campaign', n.otherAdTag],
+  ].filter(([, b]) => b.stripe || b.paypal);
+  document.getElementById('vv-other-tbody').innerHTML = rows.length ? rows.map(([l, b]) =>
+    `<tr class="group"><td>${l}</td>${num(b.stripe)}${num(b.paypal)}<td>${revenueUsd(b.revenue)}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="zero">None in these dates.</td></tr>';
+  document.getElementById('vv-note').innerHTML =
+    '<strong>Buyer</strong> = a new Vig Village purchase in these dates: a paid Stripe checkout whose items name "Vig Village" (one per customer), ' +
+    'or the first-ever Vig Village PayPal payment of a buyer (from the payments saved by the hourly refresh, so it can lag by up to an hour). ' +
+    'Each ad\'s link carries its ad set ID and ad ID (utm_term and utm_content). The sales page passes them on to Stripe (client_reference_id) and PayPal (custom), so the sale goes to that ad set. ' +
+    'Visitors without an ad tag (emails, links) are tagged with the page they bought on, so sales from the AH1 and AH3 email lists show by page. ' +
+    'PayPal buttons may drop the tag, so some PayPal sales from ads can show under "No tag". ' +
+    '<strong>Revenue</strong> = the first payment only, in euros. Renewals and Atomic Homework payments are not counted here; the main dashboard has all payments.';
+}
 
 function renderDictionary(d) {
   const warn = document.getElementById('d-warn');

@@ -178,6 +178,15 @@ A second section on `/ads`, one row per ad set of that campaign: spend, Meta pur
 - Revenue so far (€7 + bumps + upsell payments so far) and ROAS (revenue in dollars ÷ spend) are shown per ad set and in the totals. The total ROAS, like cost per buyer, leaves out untargeted countries. Upsells also show as a percentage of dictionary orders.
 - Sales go to an ad set by card country, using each ad set's country targeting from Meta. Only ad sets with spend in the chosen dates are used; ad sets with no spend are ignored. Ad sets targeting exactly the same countries are shown as one group. Countries targeted by more than one group, or by none, get their own rows.
 
+### Vig Village Reopen November 2026
+
+A third section on `/ads`: new Vig Village buyers in the chosen dates.
+
+- **Buyers**: paid Stripe checkouts (main account) whose items name "Vig Village", one per customer, plus each buyer's first-ever Vig Village PayPal payment (from the saved payments, so it can lag by up to an hour).
+- **By ad set**: sales tagged `<ad set id>__<ad id>` go to that ad set of this campaign (spend, buyers, first-payment revenue, ROAS, cost per buyer).
+- **Not from these ads**: sales tagged `page_<page>` (visitors with no ad tag, e.g. emails to AH1 → `page_vv-ah1`, emails to AH3 → `page_vv-ah3`), sales with no tag, and sales tagged with an ad set outside this campaign.
+- The tag comes from the script in `public/vv-page-tag.html`, pasted into the footer tracking code of the Kartra pages store.mrvig.com/vv-ah1 and /vv-ah3. It sets Stripe `client_reference_id` and PayPal `custom` on the buy links. PayPal hosted buttons may drop `custom`; those sales show under "No tag".
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -209,6 +218,7 @@ app/
 │   ├── source-links.js    # Tagged checkout links (copies a Payment Link per source)
 │   ├── ads.js             # /ads: Meta ad set spend vs. Stripe sales by card country
 │   ├── ads-dictionary.js  # /ads: Atomic Dictionary campaign section
+│   ├── ads-vv.js          # /ads: Vig Village Reopen campaign section
 │   └── seed.js            # One-shot CSV → Firestore bulk load
 ├── public/
 │   ├── login.html         # Google sign-in

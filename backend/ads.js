@@ -89,6 +89,7 @@ const parseRef = (ref) => {
 };
 
 import { buildDictionarySection } from './ads-dictionary.js';
+import { buildVigVillageSection } from './ads-vv.js';
 import { paypalPlanSales } from './paypal-refresh.js';
 
 // PayPal plan on the €39 sales pages (english.mrvig.com/amazing, /one-thing, /one-thing-img).
@@ -428,8 +429,9 @@ export async function buildAdsReport(since, until) {
   let dictionary = null;
   let ownSales = [];
   let paypal = { sales: [] };
+  let vigVillage = null;
   try {
-    [sales, trials, dictionary, ownSales, paypal] = await Promise.all([
+    [sales, trials, dictionary, ownSales, paypal, vigVillage] = await Promise.all([
       stripeSales(from, to),
       stripeTrials(from, to),
       buildDictionarySection(since, until, from, to, hasMeta && !!account).catch((err) => {
@@ -443,6 +445,10 @@ export async function buildAdsReport(since, until) {
           return { sales: [], warnings: ['Could not read PayPal: ' + err.message] };
         })
         : Promise.resolve({ sales: [], warnings: ['PAYPAL_CLIENT_ID is not set in Railway, so PayPal sales are missing.'] }),
+      buildVigVillageSection(since, until, from, to, hasMeta && !!account).catch((err) => {
+        console.error('[ads] Vig Village section failed:', err);
+        return { error: err.message };
+      }),
     ]);
   } catch (err) {
     if (/Stripe 403/.test(err.message)) throw new Error('The Stripe key cannot read checkouts. Add "Checkout Sessions: Read" to the restricted key (STRIPE_KEY). ' + err.message);
@@ -653,6 +659,7 @@ export async function buildAdsReport(since, until) {
     regionOrder: Object.keys(REGIONS),
     links: { direct: DIRECT_LINK, trial: TRIAL_LINK, adsets: ADSET_LINKS, paypalPlans: PAYPAL_PLANS },
     dictionary,
+    vigVillage,
     warnings,
     builtAt: new Date().toISOString(),
   };
