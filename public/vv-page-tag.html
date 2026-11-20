@@ -1,0 +1,41 @@
+<!--
+  Vig Village sales pages (store.mrvig.com/vv-ah1, store.mrvig.com/vv-ah3):
+  paste this in Kartra → page → Settings → Tracking code → Footer (before </body>).
+
+  It puts a tag on the Stripe and PayPal buy links so the dashboard (/ads, section
+  "Vig Village Reopen November 2026") knows where each sale came from:
+    from a Meta ad   → "<ad set id>__<ad id>" (from the ad's utm_term and utm_content)
+    anything else    → "page_<page name>", e.g. page_vv-ah1 (emails to AH1), page_vv-ah3 (emails to AH3)
+  Stripe gets it as client_reference_id, PayPal as custom.
+-->
+<script>
+(function () {
+  var p = new URLSearchParams(location.search);
+  var clean = function (s) { return String(s || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 100); };
+  var term = p.get('utm_term'), content = p.get('utm_content');
+  var page = clean(location.pathname.split('/').filter(Boolean).pop() || 'page');
+  var tag = term && content ? clean(term) + '__' + clean(content) : 'page_' + page;
+  try {
+    if (term && content) sessionStorage.setItem('vv_tag', tag);
+    else tag = sessionStorage.getItem('vv_tag') || tag;
+  } catch (e) {}
+  function tagLink(a) {
+    var href = a.getAttribute('href') || '';
+    var u;
+    try { u = new URL(href, location.href); } catch (e) { return; }
+    if (/(^|\.)buy\.stripe\.com$/i.test(u.hostname)) u.searchParams.set('client_reference_id', tag);
+    else if (/(^|\.)paypal\.com$/i.test(u.hostname)) u.searchParams.set('custom', tag);
+    else return;
+    a.setAttribute('href', u.toString());
+  }
+  function tagAll() { document.querySelectorAll('a[href]').forEach(tagLink); }
+  tagAll();
+  document.addEventListener('DOMContentLoaded', tagAll);
+  window.addEventListener('load', tagAll);
+  // Kartra may rewrite links when clicked, so tag again at click time.
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (a) tagLink(a);
+  }, true);
+})();
+</script>
