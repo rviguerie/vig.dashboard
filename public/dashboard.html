@@ -69,6 +69,13 @@ h1{font-size:30px;font-weight:700;letter-spacing:-.3px;margin-bottom:.2rem}
 .product-table .pname{color:#111827;font-weight:500}
 .product-table .dim{color:#1f2937}
 .product-table tr.totals td{font-weight:600;border-top:1px solid #c4c9d4}
+.sb-table tr.sb-prod td{font-weight:700;color:#111827;background:#f3f4f6;border-top:1px solid #d1d5db}
+.sb-table tr.sb-type td:first-child{padding-left:2rem}
+.sb-table .t-new{color:#1d4ed8;font-weight:600}
+.sb-table .t-up{color:#7c3aed;font-weight:600}
+.sb-table .t-wb{color:#ea580c;font-weight:600}
+.sb-list{font-size:14px;margin-top:.5rem}
+.sb-list td,.sb-list th{padding:.4rem .6rem;white-space:nowrap}
 .chart-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
 @media(max-width:1100px){.chart-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.chart-grid{grid-template-columns:1fr}}
@@ -239,6 +246,48 @@ details.how .note{font-style:normal}
         <div class="metric-sub">processed refunds</div>
       </div>
     </div>
+  </div>
+
+  <div class="section" id="sales-breakdown-section">
+    <div class="section-title">Sales in this window<span class="section-sub">Every payment from all Stripe accounts and PayPal, by product and type</span></div>
+    <table class="product-table sb-table">
+      <thead>
+        <tr>
+          <th>Product / type</th>
+          <th class="num">Count</th>
+          <th class="num">Total (€)</th>
+        </tr>
+      </thead>
+      <tbody id="sb-tbody"></tbody>
+    </table>
+    <details class="how" id="sb-list-wrap"><summary id="sb-list-summary">Show each payment</summary>
+      <div style="overflow-x:auto">
+        <table class="product-table sb-list">
+          <thead>
+            <tr>
+              <th>Date (Prague)</th>
+              <th>Customer</th>
+              <th>Product</th>
+              <th>Plan</th>
+              <th>Type</th>
+              <th class="num">Amount</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody id="sb-list-tbody"></tbody>
+        </table>
+      </div>
+      <div class="note" id="sb-list-note" style="margin-top:.5rem"></div>
+    </details>
+    <details class="how"><summary>How this is counted</summary><div class="note">
+      <b>New</b> = the customer's first ever payment for that product.
+      <b>Upgrade to annual</b> = paid for a year after paying monthly (or another shorter plan).
+      <b>Win-back</b> = paid again more than 30 days after their paid time ran out (they had quit and came back).
+      <b>Monthly rebill</b> / <b>Annual renewal</b> = an existing member paid again on the same plan.
+      <b>Switched to monthly</b> = paid monthly after paying for a year.
+      Plan (monthly / annual) is read from the price paid. Products with prices the dashboard doesn't know show as "New" or "Repeat".
+      Fully refunded payments are left out; partly refunded ones count at what was kept. USD payments are converted at the EUR/USD rate above.
+    </div></details>
   </div>
 
   <div class="section">
@@ -778,7 +827,160 @@ function compute(filters) {
     nativeUnattribUsd: nativeUnattrib.usd || 0,
     monthsInWindow: sortedMonths,
     salesMonthly, rebillsMonthly, churnMonthly,
+    salesBreakdown: computeSalesBreakdown(charges, cutoff, asOf, filters.rate || 1.10),
   };
+}
+
+// ─── Sales breakdown: type of every payment in the window ─────────────
+// Types: New (by plan), Upgrade to annual, Win-back, Monthly rebill,
+// Annual renewal, Switched to monthly, Rebill (other plan), Repeat.
+const SB_TYPE_ORDER = [
+  'New – monthly', 'New – annual', 'New – 2-month', 'New – 3-month', 'New',
+  'Upgrade to annual', 'Win-back',
+  'Monthly rebill', 'Annual renewal', 'Rebill – 2-month', 'Rebill – 3-month',
+  'Switched to monthly', 'Repeat', 'Unknown',
+];
+const SB_SOURCE = {
+  kartra_orchestrated: 'Kartra Stripe (legacy)',
+  native_stripe_sub: 'Native Stripe',
+  paypal: 'PayPal',
+  thrivecart: 'ThriveCart Stripe',
+};
+const WINBACK_GAP_MS = 30 * 86400000;
+
+function planLabel(months) {
+  if (months === null || months === undefined) return '';
+  if (months === 1) return 'monthly';
+  if (months >= 11) return 'annual';
+  return months + '-month';
+}
+
+function computeSalesBreakdown(charges, cutoff, asOf, rate) {
+  // History per product+customer: every payment that kept money (net > 0).
+  const hist = new Map();
+  for (const c of charges) {
+    if (c.net <= 0 || !c.product || c.product === '__native_sub_unattributed__') continue;
+    const ident = c.email || c.customerId || c.invoiceId;
+    if (!ident) continue;
+    const key = c.product + '||' + ident;
+    if (!hist.has(key)) hist.set(key, []);
+    hist.get(key).push(c);
+  }
+  const typeOf = new Map();
+  for (const [key, arr] of hist) {
+    arr.sort((a, b) => a.date - b.date);
+    const product = key.split('||')[0];
+    const tracked = !!PRICE_RULES[product];
+    let maxDue = null;      // latest date their paid time ran out
+    let prevMonths = null;  // plan of the last payment with a known plan
+    let count = 0;
+    for (const c of arr) {
+      const months = tracked ? monthsFor(product, c.amount) : null;
+      let type;
+      if (count === 0) {
+        type = months === null ? 'New' : 'New – ' + planLabel(months);
+      } else if (!tracked || months === null) {
+        type = 'Repeat';
+      } else if (maxDue !== null && c.date - maxDue > WINBACK_GAP_MS) {
+        type = 'Win-back';
+      } else if (months >= 11 && prevMonths !== null && prevMonths < 11) {
+        type = 'Upgrade to annual';
+      } else if (months === 1 && prevMonths !== null && prevMonths >= 11) {
+        type = 'Switched to monthly';
+      } else if (months === 1) {
+        type = 'Monthly rebill';
+      } else if (months >= 11) {
+        type = 'Annual renewal';
+      } else {
+        type = 'Rebill – ' + planLabel(months);
+      }
+      typeOf.set(c, { type, months });
+      const due = new Date(c.date.getTime() + (months === null ? 30 : months * 30) * 86400000);
+      if (maxDue === null || due > maxDue) maxDue = due;
+      if (months !== null) prevMonths = months;
+      count++;
+    }
+  }
+
+  const byProduct = new Map();
+  const rows = [];
+  let totalCount = 0, totalEur = 0, upgrades = 0, winbacks = 0;
+  for (const c of charges) {
+    if (c.net <= 0 || c.date < cutoff || c.date > asOf) continue;
+    const info = typeOf.get(c) || { type: 'Unknown', months: null };
+    const prodName = !c.product ? 'Unknown product'
+      : c.product === '__native_sub_unattributed__' ? 'Stripe subscription (product not named)'
+      : c.product;
+    const eurVal = c.currency === 'eur' ? c.net : c.currency === 'usd' ? c.net / rate : c.net;
+    if (!byProduct.has(prodName)) byProduct.set(prodName, { count: 0, eur: 0, types: new Map() });
+    const p = byProduct.get(prodName);
+    p.count++; p.eur += eurVal;
+    if (!p.types.has(info.type)) p.types.set(info.type, { count: 0, eur: 0 });
+    const t = p.types.get(info.type);
+    t.count++; t.eur += eurVal;
+    totalCount++; totalEur += eurVal;
+    if (info.type === 'Upgrade to annual') upgrades++;
+    if (info.type === 'Win-back') winbacks++;
+    rows.push({
+      date: c.date, email: c.email || c.customerId || '', product: prodName,
+      plan: info.months !== null ? planLabel(info.months) : '',
+      type: info.type, amount: c.net, currency: c.currency,
+      source: SB_SOURCE[c.channel] || c.channel || '',
+    });
+  }
+  rows.sort((a, b) => b.date - a.date);
+  const products = [...byProduct.entries()]
+    .map(([name, v]) => ({
+      name, count: v.count, eur: v.eur,
+      types: [...v.types.entries()]
+        .map(([type, x]) => ({ type, ...x }))
+        .sort((a, b) => {
+          const ia = SB_TYPE_ORDER.indexOf(a.type), ib = SB_TYPE_ORDER.indexOf(b.type);
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        }),
+    }))
+    .sort((a, b) => b.eur - a.eur);
+  return { products, rows, totalCount, totalEur, upgrades, winbacks };
+}
+
+const SB_LIST_MAX = 500;
+const _timeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+function renderSalesBreakdown(sb) {
+  const tbody = document.getElementById('sb-tbody');
+  tbody.innerHTML = '';
+  if (!sb || !sb.totalCount) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:#4b5563">No payments in this window.</td></tr>';
+  } else {
+    const typeClass = t => t.startsWith('New') ? 't-new' : t === 'Upgrade to annual' ? 't-up' : t === 'Win-back' ? 't-wb' : '';
+    for (const p of sb.products) {
+      const tr = document.createElement('tr');
+      tr.className = 'sb-prod';
+      tr.innerHTML = `<td>${escapeHtml(p.name)}</td><td class="num">${fmt(p.count)}</td><td class="num">${eur(p.eur)}</td>`;
+      tbody.appendChild(tr);
+      for (const t of p.types) {
+        const r = document.createElement('tr');
+        r.className = 'sb-type';
+        r.innerHTML = `<td class="${typeClass(t.type)}">${escapeHtml(t.type)}</td><td class="num">${fmt(t.count)}</td><td class="num">${eur(t.eur)}</td>`;
+        tbody.appendChild(r);
+      }
+    }
+    const tot = document.createElement('tr');
+    tot.className = 'totals';
+    tot.innerHTML = `<td>Total</td><td class="num">${fmt(sb.totalCount)}</td><td class="num">${eur(sb.totalEur)}</td>`;
+    tbody.appendChild(tot);
+  }
+
+  const lt = document.getElementById('sb-list-tbody');
+  const shown = sb ? sb.rows.slice(0, SB_LIST_MAX) : [];
+  document.getElementById('sb-list-summary').textContent = `Show each payment (${fmt(sb ? sb.rows.length : 0)})`;
+  document.getElementById('sb-list-note').textContent = sb && sb.rows.length > SB_LIST_MAX
+    ? `Showing the latest ${SB_LIST_MAX} of ${fmt(sb.rows.length)}. Pick a shorter date range to see all.` : '';
+  lt.innerHTML = shown.map(r =>
+    `<tr><td>${_timeFmt.format(r.date)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.product)}</td>` +
+    `<td>${escapeHtml(r.plan)}</td><td>${escapeHtml(r.type)}</td>` +
+    `<td class="num">${(r.currency === 'usd' ? '$' : '€') + r.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td>${escapeHtml(r.source)}</td></tr>`
+  ).join('');
 }
 
 function shortMonth(ym) {
@@ -832,7 +1034,10 @@ function render(m) {
     `${pct(m.totalSales.eur, m.totals.eur)} of revenue · ${fmt(m.salesCount)} charges`;
   document.getElementById('m-rebills-eur').textContent = eur(m.totalRebills.eur);
   document.getElementById('m-rebills-sub').textContent =
-    `${pct(m.totalRebills.eur, m.totals.eur)} of revenue · ${fmt(m.rebillsCount)} charges`;
+    `${pct(m.totalRebills.eur, m.totals.eur)} of revenue · ${fmt(m.rebillsCount)} charges` +
+    (m.salesBreakdown && (m.salesBreakdown.upgrades || m.salesBreakdown.winbacks)
+      ? ` · incl. ${fmt(m.salesBreakdown.upgrades)} upgrades, ${fmt(m.salesBreakdown.winbacks)} win-backs` : '');
+  renderSalesBreakdown(m.salesBreakdown);
 
   document.getElementById('m-active-total').textContent = fmt(m.distinctActive);
 
