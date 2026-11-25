@@ -372,7 +372,7 @@ const PRICE_RULES = {
     [261, 12], [268, 12], [300.50, 12], [351, 12], [441, 12],
   ],
   "Vig Village": [
-    [60, 1], [99, 1], [198, 2], [540, 12], [594, 12], [792, 12], [891, 12],
+    [60, 1], [99, 1], [198, 3], [540, 12], [594, 12], [792, 12], [891, 12],
   ],
   "Vitamin V EXTRA STRENGTH": [
     [29, 1],
@@ -835,9 +835,9 @@ function compute(filters) {
 // Types: New (by plan), New – returning, Upgrade to annual, Monthly rebill,
 // Annual renewal, Switched to monthly, Rebill (other plan), Repeat.
 const SB_TYPE_ORDER = [
-  'New – monthly', 'New – annual', 'New – 2-month', 'New – 3-month', 'New', 'New – returning',
+  'New – monthly', 'New – annual', 'New – quarterly', 'New – 2-month', 'New', 'New – returning',
   'Upgrade to annual',
-  'Monthly rebill', 'Annual renewal', 'Rebill – 2-month', 'Rebill – 3-month',
+  'Monthly rebill', 'Annual renewal', 'Rebill – quarterly', 'Rebill – 2-month',
   'Switched to monthly', 'Repeat', 'Unknown',
 ];
 const SB_SOURCE = {
@@ -852,6 +852,7 @@ function planLabel(months) {
   if (months === null || months === undefined) return '';
   if (months === 1) return 'monthly';
   if (months >= 11) return 'annual';
+  if (months === 3) return 'quarterly';
   return months + '-month';
 }
 
