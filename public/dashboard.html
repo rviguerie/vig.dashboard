@@ -282,7 +282,7 @@ details.how .note{font-style:normal}
     <details class="how"><summary>How this is counted</summary><div class="note">
       <b>New</b> = the customer's first ever payment for that product.
       <b>Upgrade to annual</b> = paid for a year after paying monthly (or another shorter plan).
-      <b>Win-back</b> = paid again more than 30 days after their paid time ran out (they had quit and came back).
+      <b>New – returning</b> = paid again more than 30 days after their paid time ran out (they had quit and came back).
       <b>Monthly rebill</b> / <b>Annual renewal</b> = an existing member paid again on the same plan.
       <b>Switched to monthly</b> = paid monthly after paying for a year.
       Plan (monthly / annual) is read from the price paid. Products with prices the dashboard doesn't know show as "New" or "Repeat".
@@ -372,7 +372,7 @@ const PRICE_RULES = {
     [261, 12], [268, 12], [300.50, 12], [351, 12], [441, 12],
   ],
   "Vig Village": [
-    [60, 1], [99, 1], [198, 2], [540, 12], [594, 12], [792, 12], [891, 12],
+    [60, 1], [99, 1], [198, 3], [540, 12], [594, 12], [792, 12], [891, 12],
   ],
   "Vitamin V EXTRA STRENGTH": [
     [29, 1],
@@ -832,12 +832,12 @@ function compute(filters) {
 }
 
 // ─── Sales breakdown: type of every payment in the window ─────────────
-// Types: New (by plan), Upgrade to annual, Win-back, Monthly rebill,
+// Types: New (by plan), New – returning, Upgrade to annual, Monthly rebill,
 // Annual renewal, Switched to monthly, Rebill (other plan), Repeat.
 const SB_TYPE_ORDER = [
-  'New – monthly', 'New – annual', 'New – 2-month', 'New – 3-month', 'New',
-  'Upgrade to annual', 'Win-back',
-  'Monthly rebill', 'Annual renewal', 'Rebill – 2-month', 'Rebill – 3-month',
+  'New – monthly', 'New – annual', 'New – quarterly', 'New – 2-month', 'New', 'New – returning',
+  'Upgrade to annual',
+  'Monthly rebill', 'Annual renewal', 'Rebill – quarterly', 'Rebill – 2-month',
   'Switched to monthly', 'Repeat', 'Unknown',
 ];
 const SB_SOURCE = {
@@ -852,6 +852,7 @@ function planLabel(months) {
   if (months === null || months === undefined) return '';
   if (months === 1) return 'monthly';
   if (months >= 11) return 'annual';
+  if (months === 3) return 'quarterly';
   return months + '-month';
 }
 
@@ -882,7 +883,7 @@ function computeSalesBreakdown(charges, cutoff, asOf, rate) {
       } else if (!tracked || months === null) {
         type = 'Repeat';
       } else if (maxDue !== null && c.date - maxDue > WINBACK_GAP_MS) {
-        type = 'Win-back';
+        type = 'New – returning';
       } else if (months >= 11 && prevMonths !== null && prevMonths < 11) {
         type = 'Upgrade to annual';
       } else if (months === 1 && prevMonths !== null && prevMonths >= 11) {
@@ -920,7 +921,7 @@ function computeSalesBreakdown(charges, cutoff, asOf, rate) {
     t.count++; t.eur += eurVal;
     totalCount++; totalEur += eurVal;
     if (info.type === 'Upgrade to annual') upgrades++;
-    if (info.type === 'Win-back') winbacks++;
+    if (info.type === 'New – returning') winbacks++;
     rows.push({
       date: c.date, email: c.email || c.customerId || '', product: prodName,
       plan: info.months !== null ? planLabel(info.months) : '',
@@ -952,7 +953,7 @@ function renderSalesBreakdown(sb) {
   if (!sb || !sb.totalCount) {
     tbody.innerHTML = '<tr><td colspan="3" style="color:#4b5563">No payments in this window.</td></tr>';
   } else {
-    const typeClass = t => t.startsWith('New') ? 't-new' : t === 'Upgrade to annual' ? 't-up' : t === 'Win-back' ? 't-wb' : '';
+    const typeClass = t => t === 'New – returning' ? 't-wb' : t.startsWith('New') ? 't-new' : t === 'Upgrade to annual' ? 't-up' : '';
     for (const p of sb.products) {
       const tr = document.createElement('tr');
       tr.className = 'sb-prod';
@@ -1036,7 +1037,7 @@ function render(m) {
   document.getElementById('m-rebills-sub').textContent =
     `${pct(m.totalRebills.eur, m.totals.eur)} of revenue · ${fmt(m.rebillsCount)} charges` +
     (m.salesBreakdown && (m.salesBreakdown.upgrades || m.salesBreakdown.winbacks)
-      ? ` · incl. ${fmt(m.salesBreakdown.upgrades)} upgrades, ${fmt(m.salesBreakdown.winbacks)} win-backs` : '');
+      ? ` · incl. ${fmt(m.salesBreakdown.upgrades)} upgrades, ${fmt(m.salesBreakdown.winbacks)} returning` : '');
   renderSalesBreakdown(m.salesBreakdown);
 
   document.getElementById('m-active-total').textContent = fmt(m.distinctActive);
