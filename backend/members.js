@@ -13,7 +13,9 @@
  * Members count on their FIRST PAID payment (free trials cancelled before
  * paying are not members), one per customer (email, else customer ID):
  *
- *   thrivecart  every paying customer → 'dictionary_ad_upsell' (upsell page)
+ *   Any sale of the ThriveCart product "Atomic Homework Daily Email Offer"
+ *   (card or PayPal) → 'daily_email'.
+ *   thrivecart  every other paying customer → 'dictionary_ad_upsell' (upsell page)
  *   People are matched by email AND Stripe customer ID (linkedIdentity), so
  *   someone who changed email is not counted as a new member.
  *   main        first paid Atomic Homework payment in the `charges` ledger
@@ -28,7 +30,9 @@
  *               Everyone else, in order:
  *                 1. the metadata.source tag on the subscription that payment
  *                    belongs to (tagged checkout links, see source-links.js)
- *                 2. the "AWD Upsell" price → 'dictionary_ad_upsell'
+ *                 2. Meta ad checkout (ad-only payment link, or ad tag from the
+ *                    sales page) → 'meta_ads'
+ *                 3. the "AWD Upsell" price → 'dictionary_ad_upsell'
  *                 3. first payment €49 → 'store', €29 → 'launch_promo',
  *                    €351 → 'app_annual' (annual offer link inside the Vig app)
  *                 4. first payment €39 → 'daily_email'
@@ -42,6 +46,7 @@ const COLLECTION = 'atomic_subs';
 const STRIPE_BASE = 'https://api.stripe.com/v1';
 const FIRESTORE_BATCH = 500;
 const MAX_PAGES = 1000;
+const DAY_S = 86400;
 const SIGNUP_WINDOW = 10 * 86400;  // first payment can come up to 10 days after sign-up (7-day free trial)
 const UPSELL_PAGE_WINDOW = 3600;     // joined ≤1h after the first dictionary purchase = one-click upsell page
 const UPSELL_SEQ_WINDOW = 6 * 86400; // joined ≤6 days after it = Kartra upsell sequence (runs 5 days); later = daily emails
@@ -61,10 +66,36 @@ export const SOURCES = {
   daily_email: 'Daily emails',
   launch_promo: 'Launch promotion email (€29)',
   app_annual: 'In-app sales (€351)',
+  meta_ads: 'Meta ads',
   store_or_daily: 'Store or daily email (unknown)',
   dictionary_ad_upsell: 'Upsell page',
 };
 const TAGGABLE = new Set(['store', 'upsell_email', 'daily_email']);
+
+// Meta ad sales (main account). A subscription counts as an ad sale when its
+// checkout came from an ad-only payment link, or the sales page tagged the
+// checkout with an ad (client_reference_id "<ad set>__<ad>", see ads.js).
+// Keep in sync with TRIAL_LINK / ADSET_LINKS in ads.js.
+const AD_ONLY_LINKS = new Set([
+  'plink_1UPnBuBRJTRkwDOL5OuauwiB', // free trial ad link
+  'plink_1UVUHVBRJTRkwDOLmofA9UXE', // english.mrvig.com/one-thing
+  'plink_1UVXclBRJTRkwDOLzd0VZIie', // english.mrvig.com/one-thing-img
+]);
+const ADS_SINCE = Math.floor(Date.UTC(2026, 7, 1) / 1000); // ad checkouts are read from Aug 2026 on
+const isAdRef = (ref) => { const i = (ref || '').indexOf('__'); return i > 0 && !/^page_/i.test(ref); };
+
+/** Subscription id → { link, ref } for completed checkouts since `since`. */
+async function checkoutInfo(key, since) {
+  const sessions = await listAll(key, '/checkout/sessions', [['status', 'complete'], ['created[gte]', String(since)]]);
+  const out = new Map();
+  for (const cs of sessions) {
+    const sub = typeof cs.subscription === 'object' && cs.subscription ? cs.subscription.id : cs.subscription;
+    if (!sub) continue;
+    const link = typeof cs.payment_link === 'object' && cs.payment_link ? cs.payment_link.id : cs.payment_link || '';
+    out.set(sub, { link, ref: cs.client_reference_id || '' });
+  }
+  return out;
+}
 
 const ACCOUNTS = {
   main: { env: 'STRIPE_KEY', atomicOnly: true },
@@ -82,6 +113,9 @@ const fullScanned = {};    // account → true once this process has read every 
 const isAtomicHomework = (name) => /atomic\s*homework/i.test(name || '');
 // "AWD Upsell" at €39 is Atomic Homework sold as the dictionary one-click upsell.
 const isAwdUpsell = (name, amount) => /awd\s*upsell/i.test(name || '') && Math.abs((amount || 0) - 39) < 0.01;
+// ThriveCart product "Atomic Homework Daily Email Offer": the checkout link in the daily emails
+// (card or PayPal). Sales naming it are Daily emails, whichever account they land in.
+const isDailyEmailOffer = (desc) => /daily\s*email\s*offer/i.test(desc || '');
 const isDictionary = (desc) => /atomic word dictionary|word dictionary/i.test(desc || '');
 // ThriveCart €7 dictionary, €9 order bump and €16 (both) are not Atomic Homework revenue.
 const isDictAmount = (amount) => [7, 9, 16].some((p) => priceIs(amount, p));
@@ -247,6 +281,20 @@ export async function syncMembers() {
         }
       }
       const rows = raw.map((s) => mapSubscription(account, s, names)).filter(Boolean);
+      if (account === 'main' && rows.length) {
+        try {
+          const info = await checkoutInfo(key, Math.max(ADS_SINCE, (sinceTs || 0) - 2 * DAY_S));
+          for (const r of rows) {
+            const ci = info.get(r.sub_id);
+            if (!ci) continue;
+            r.checkout_link = ci.link;
+            r.checkout_ref = ci.ref;
+            r.meta_ad = AD_ONLY_LINKS.has(ci.link) || isAdRef(ci.ref);
+          }
+        } catch (err) {
+          console.error('[members] checkout sessions read failed (STRIPE_KEY needs Checkout Sessions: Read):', err.message);
+        }
+      }
       const skipped = raw.length - rows.length;
       result[account] = { scanned: raw.length, added: await persist(rows), skipped };
       if (skipped) {
@@ -340,6 +388,7 @@ function analyse() {
   const join = new Map();       // main: ident → first paid charge (unix s)
   const joinVia = new Map();    // ident → 'paypal' | 'stripe' (how that first payment was made)
   const joinAmount = new Map(); // ident → amount of that first payment
+  const joinDaily = new Set();  // idents whose first payment was the Daily Email Offer
   const joinAwd = new Set();    // idents whose first payment was the €39 "AWD Upsell"
   const mainSubs = new Map();   // ident → [subs]
   const dictBuys = new Map();   // ident → [dictionary purchase times]
@@ -357,20 +406,22 @@ function analyse() {
     }
     const net = (parseFloat(c.amount) || 0) - (parseFloat(c.amount_refunded) || 0);
     if (c.status !== 'Paid' || net <= 0) continue;
-    if (c.channel === 'thrivecart') {
-      // Every ThriveCart sale is the Atomic Homework upsell.
+    if (c.channel === 'thrivecart' && !isDailyEmailOffer(c.description)) {
+      // Every other ThriveCart sale is the Atomic Homework upsell.
       if (!isDictionary(c.description) && (!tcJoin.has(id) || ts < tcJoin.get(id))) tcJoin.set(id, ts);
       if (!isDictionary(c.description) && !isDictAmount(parseFloat(c.amount))) addCents(id, net);
       continue;
     }
     const awd = isAwdUpsell(c.description, parseFloat(c.amount) || 0);
-    if (!(awd || isAtomicHomework(c.description))) continue;
+    const daily = isDailyEmailOffer(c.description);
+    if (!(awd || daily || isAtomicHomework(c.description))) continue;
     addCents(id, net);
     if (!join.has(id) || ts < join.get(id)) {
       join.set(id, ts);
       joinVia.set(id, c.channel === 'paypal' ? 'paypal' : 'stripe');
       joinAmount.set(id, parseFloat(c.amount) || 0);
       if (awd) joinAwd.add(id); else joinAwd.delete(id);
+      if (daily) joinDaily.add(id); else joinDaily.delete(id);
     }
   }
   const joinedAs = new Map();   // ident → { date, source } of their earliest membership (either account)
@@ -408,12 +459,14 @@ function analyse() {
     const firstDict = Math.min(Infinity, ...(dictBuys.get(id) || []));
     const awd = joinAwd.has(id) || signup?.awd_upsell;
     let source;
-    if (firstDict <= signedUp + 300) {
+    if (joinDaily.has(id)) source = 'daily_email';
+    else if (firstDict <= signedUp + 300) {
       if (awd || signedUp - firstDict <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
       else if (signedUp - firstDict <= UPSELL_SEQ_WINDOW) source = 'upsell_email';
       else source = 'daily_email';
     }
     else if (signup && TAGGABLE.has(signup.source_tag)) { source = signup.source_tag; tagged++; }
+    else if (signup?.meta_ad) source = 'meta_ads';
     else if (awd) source = 'dictionary_ad_upsell';
     else if (priceIs(amount, STORE_PRICE)) source = 'store';
     else if (priceIs(amount, LAUNCH_PROMO_PRICE)) source = 'launch_promo';
@@ -446,7 +499,8 @@ function analyse() {
     const sub = (allSubs.get(id) || []).filter((s) => s.start >= bought - 300).sort((a, b) => a.start - b.start)[0];
     if (!sub) continue;
     let source;
-    if (sub.account === 'thrivecart' || sub.awd_upsell || sub.start - bought <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
+    if (isDailyEmailOffer(sub.product_name)) source = 'daily_email';
+    else if (sub.account === 'thrivecart' || sub.awd_upsell || sub.start - bought <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
     else if (sub.start - bought <= UPSELL_SEQ_WINDOW) source = 'upsell_email';
     else source = 'daily_email';
     buyers.set(id, { bought, joined: sub.start, source, paid: false, cents: 0 });
