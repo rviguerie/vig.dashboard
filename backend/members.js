@@ -14,6 +14,8 @@
  * paying are not members), one per customer (email, else customer ID):
  *
  *   thrivecart  every paying customer → 'dictionary_ad_upsell' (upsell page)
+ *   People are matched by email AND Stripe customer ID (linkedIdentity), so
+ *   someone who changed email is not counted as a new member.
  *   main        first paid Atomic Homework payment in the `charges` ledger
  *               (Stripe, Kartra-orchestrated and PayPal).
  *               Dictionary buyers (bought the Atomic Word Dictionary before
@@ -27,7 +29,8 @@
  *                 1. the metadata.source tag on the subscription that payment
  *                    belongs to (tagged checkout links, see source-links.js)
  *                 2. the "AWD Upsell" price → 'dictionary_ad_upsell'
- *                 3. first payment €49 → 'store', €29 → 'launch_promo'
+ *                 3. first payment €49 → 'store', €29 → 'launch_promo',
+ *                    €351 → 'app_annual' (annual offer link inside the Vig app)
  *                 4. first payment €39 → 'daily_email'
  *                 5. anything else → 'store_or_daily' (unknown)
  */
@@ -48,6 +51,8 @@ const UPSELL_SEQ_WINDOW = 6 * 86400; // joined ≤6 days after it = Kartra upsel
 const STORE_PRICE = 49;
 const EMAIL_PRICE = 39;
 const LAUNCH_PROMO_PRICE = 29;
+// €351/year is only offered inside the app (link in the Vig app to the annual offer).
+const APP_ANNUAL_PRICE = 351;
 const priceIs = (amount, p) => amount != null && Math.abs(amount - p) < 0.01;
 
 export const SOURCES = {
@@ -55,6 +60,7 @@ export const SOURCES = {
   upsell_email: 'Upsell sequence',
   daily_email: 'Daily emails',
   launch_promo: 'Launch promotion email (€29)',
+  app_annual: 'App annual offer (€351)',
   store_or_daily: 'Store or daily email (unknown)',
   dictionary_ad_upsell: 'Upsell page',
 };
@@ -265,14 +271,46 @@ export async function syncMembers() {
 
 // ─── Member list ─────────────────────────────────────────────────────
 
-const identOf = (email, customerId) => email || customerId || '';
+/**
+ * One person can show up under different emails (e.g. an old Kartra email and
+ * a new Stripe checkout email) but the same Stripe customer ID. Link emails and
+ * customer IDs that appear together, so one person counts once.
+ * Returns ident(email, customerId) → a stable key for that person.
+ */
+function linkedIdentity(charges, subscriptions) {
+  const parent = new Map();
+  const find = (x) => {
+    let r = x;
+    while (parent.has(r) && parent.get(r) !== r) r = parent.get(r);
+    let y = x;
+    while (parent.has(y) && parent.get(y) !== r) { const n = parent.get(y); parent.set(y, r); y = n; }
+    return r;
+  };
+  const add = (x) => { if (!parent.has(x)) parent.set(x, x); };
+  const union = (a, b) => { add(a); add(b); const ra = find(a), rb = find(b); if (ra !== rb) parent.set(rb < ra ? ra : rb, rb < ra ? rb : ra); };
+  const link = (email, cid) => {
+    email = (email || '').toLowerCase();
+    if (email && cid) union('e:' + email, 'c:' + cid);
+  };
+  for (const c of charges) link(c.customer_email, c.customer_id);
+  for (const s of subscriptions) link(s.customer_email, s.customer_id);
+  const ident = (email, cid) => {
+    email = (email || '').toLowerCase();
+    const tok = email ? 'e:' + email : cid ? 'c:' + cid : '';
+    if (!tok) return '';
+    return parent.has(tok) ? find(tok) : tok;
+  };
+  // Every email / customer ID → its person key (for callers that look up by raw email or ID).
+  ident.aliases = () => [...parent.keys()].map((t) => [t.slice(2), find(t)]);
+  return ident;
+}
 
 /**
  * Build the member list. Returns [{ date, account, source }] with `date`
  * as unix seconds (join date) — no emails leave the server.
  */
 export function buildMembers() {
-  const { buyers, ...out } = analyse();
+  const { buyers, identOf, ...out } = analyse();
   return out;
 }
 
@@ -285,11 +323,17 @@ export function buildMembers() {
  * Homework so far (net of refunds). Server-side only (keys are emails).
  */
 export function dictionaryBuyerSales() {
-  return analyse().buyers;
+  // Keyed by raw email or customer ID (any of the person's emails / IDs).
+  const { buyers, identOf } = analyse();
+  const out = new Map();
+  for (const [k, v] of buyers) out.set(k.slice(2), v);
+  for (const [raw, key] of identOf.aliases()) if (buyers.has(key)) out.set(raw, buyers.get(key));
+  return out;
 }
 
 function analyse() {
   const members = [];
+  const identOf = linkedIdentity(getCachedCharges(), subs);
   // Members are counted on their first paid Atomic Homework payment, so free
   // trials that are cancelled before paying are not counted.
   const tcJoin = new Map();     // ThriveCart: ident → first paid charge
@@ -305,7 +349,7 @@ function analyse() {
     if (c.status !== 'Paid' && c.status !== 'Refunded') continue;
     const ts = parseInt(c.created, 10);
     if (!ts) continue;
-    const id = identOf((c.customer_email || '').toLowerCase(), c.customer_id);
+    const id = identOf(c.customer_email, c.customer_id);
     if (!id) continue;
     if (isDictionary(c.description)) {
       if (!dictBuys.has(id)) dictBuys.set(id, []);
@@ -373,6 +417,7 @@ function analyse() {
     else if (awd) source = 'dictionary_ad_upsell';
     else if (priceIs(amount, STORE_PRICE)) source = 'store';
     else if (priceIs(amount, LAUNCH_PROMO_PRICE)) source = 'launch_promo';
+    else if (priceIs(amount, APP_ANNUAL_PRICE)) source = 'app_annual';
     else if (priceIs(amount, EMAIL_PRICE)) source = 'daily_email';
     else source = 'store_or_daily';
     if (via === 'paypal') paypal++;
@@ -409,6 +454,7 @@ function analyse() {
   dictionary.sort((a, b) => a.bought - b.bought);
   return {
     buyers,
+    identOf,
     members,
     dictionary,
     stats: {

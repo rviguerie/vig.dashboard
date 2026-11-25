@@ -856,12 +856,31 @@ function planLabel(months) {
   return months + '-month';
 }
 
+// Same person under two emails but one Stripe customer ID → one key.
+function linkedIdent(charges) {
+  const parent = new Map();
+  const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+  const add = x => { if (!parent.has(x)) parent.set(x, x); };
+  for (const c of charges) {
+    if (!c.email || !c.customerId) continue;
+    const a = 'e:' + c.email, b = 'c:' + c.customerId;
+    add(a); add(b);
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent.set(rb, ra);
+  }
+  return c => {
+    const t = c.email ? 'e:' + c.email : c.customerId ? 'c:' + c.customerId : c.invoiceId ? 'i:' + c.invoiceId : '';
+    return t && parent.has(t) ? find(t) : t;
+  };
+}
+
 function computeSalesBreakdown(charges, cutoff, asOf, rate) {
   // History per product+customer: every payment that kept money (net > 0).
+  const identOf = linkedIdent(charges);
   const hist = new Map();
   for (const c of charges) {
     if (c.net <= 0 || !c.product || c.product === '__native_sub_unattributed__') continue;
-    const ident = c.email || c.customerId || c.invoiceId;
+    const ident = identOf(c);
     if (!ident) continue;
     const key = c.product + '||' + ident;
     if (!hist.has(key)) hist.set(key, []);
