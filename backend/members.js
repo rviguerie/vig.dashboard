@@ -115,6 +115,8 @@ const isAtomicHomework = (name) => /atomic\s*homework/i.test(name || '');
 const isAwdUpsell = (name, amount) => /awd\s*upsell/i.test(name || '') && Math.abs((amount || 0) - 39) < 0.01;
 // ThriveCart product "Atomic Homework Daily Email Offer": the checkout link in the daily emails
 // (card or PayPal). Sales naming it are Daily emails, whichever account they land in.
+// PayPal plans used only on the daily-email sales page (store.mrvig.com/atomic-homework).
+const DAILY_EMAIL_PAYPAL_PLANS = new Set(['P-3AR01710HP273721CNMDNAFQ']);
 const isDailyEmailOffer = (desc) => /daily\s*email\s*offer/i.test(desc || '');
 const isDictionary = (desc) => /atomic word dictionary|word dictionary/i.test(desc || '');
 // ThriveCart €7 dictionary, €9 order bump and €16 (both) are not Atomic Homework revenue.
@@ -413,7 +415,7 @@ function analyse() {
       continue;
     }
     const awd = isAwdUpsell(c.description, parseFloat(c.amount) || 0);
-    const daily = isDailyEmailOffer(c.description);
+    const daily = isDailyEmailOffer(c.description) || DAILY_EMAIL_PAYPAL_PLANS.has(c.paypal_plan_id || '');
     if (!(awd || daily || isAtomicHomework(c.description))) continue;
     addCents(id, net);
     if (!join.has(id) || ts < join.get(id)) {
