@@ -282,7 +282,7 @@ function showWarnings(data) {
     'How sources are worked out: ThriveCart account members are all the upsell page. ' +
     'Main-account members (Stripe, Kartra and PayPal) who bought the Atomic Word Dictionary first are timed from their first dictionary purchase: the "AWD Upsell" price, or joining within 1 hour, is the upsell page; joining between 1 hour and 6 days later is the upsell sequence (it runs 5 days); later than that is the daily emails. ' +
     'Other main-account members who used a tagged checkout link get that link\'s source. ' +
-    'Everyone else, by their first payment: the "AWD Upsell" price is the upsell page; €49 is the store; €29 is the launch promotion email; €351 is the annual offer inside the app; €39 is the daily emails; any other price is "unknown". ' +
+    'Everyone else, by their first payment: the "AWD Upsell" price is the upsell page; €49 is the store; €29 is the launch promotion email; €351 is in-app sales (the annual offer link in the app); €39 is the daily emails; any other price is "unknown". ' +
     'Each person counts once per account, on the date they first joined. Someone who paid under a different email but the same Stripe customer counts as the same person. ' +
     `<br>Found: ${fmt(s.dictionaryBuyers || 0)} dictionary buyers · ${fmt(s.taggedMembers || 0)} members from tagged links · ${fmt(s.paypalMembers || 0)} members who first paid with PayPal · ` +
     `${fmt(s.mainSubs || 0)} main-account subscriptions · ${fmt(s.thrivecartSubs || 0)} ThriveCart subscriptions.`;

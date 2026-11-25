@@ -60,7 +60,7 @@ export const SOURCES = {
   upsell_email: 'Upsell sequence',
   daily_email: 'Daily emails',
   launch_promo: 'Launch promotion email (€29)',
-  app_annual: 'App annual offer (€351)',
+  app_annual: 'In-app sales (€351)',
   store_or_daily: 'Store or daily email (unknown)',
   dictionary_ad_upsell: 'Upsell page',
 };
