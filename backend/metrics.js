@@ -32,6 +32,8 @@ function normalizeProduct(desc, amount) {
   }
   // "AWD Upsell" at €39 is Atomic Homework sold as the dictionary one-click upsell.
   if (/awd upsell/i.test(desc) && Math.abs((amount || 0) - 39) < 0.01) return 'Mr. Vigs Atomic Homework';
+  // ThriveCart "Atomic Homework Daily Email Offer" (the daily-email checkout) is Atomic Homework.
+  if (/daily\s*email\s*offer/i.test(desc)) return 'Mr. Vigs Atomic Homework';
   return desc;
 }
 

@@ -13,7 +13,9 @@
  * Members count on their FIRST PAID payment (free trials cancelled before
  * paying are not members), one per customer (email, else customer ID):
  *
- *   thrivecart  every paying customer → 'dictionary_ad_upsell' (upsell page)
+ *   Any sale of the ThriveCart product "Atomic Homework Daily Email Offer"
+ *   (card or PayPal) → 'daily_email'.
+ *   thrivecart  every other paying customer → 'dictionary_ad_upsell' (upsell page)
  *   People are matched by email AND Stripe customer ID (linkedIdentity), so
  *   someone who changed email is not counted as a new member.
  *   main        first paid Atomic Homework payment in the `charges` ledger
@@ -111,6 +113,9 @@ const fullScanned = {};    // account → true once this process has read every 
 const isAtomicHomework = (name) => /atomic\s*homework/i.test(name || '');
 // "AWD Upsell" at €39 is Atomic Homework sold as the dictionary one-click upsell.
 const isAwdUpsell = (name, amount) => /awd\s*upsell/i.test(name || '') && Math.abs((amount || 0) - 39) < 0.01;
+// ThriveCart product "Atomic Homework Daily Email Offer": the checkout link in the daily emails
+// (card or PayPal). Sales naming it are Daily emails, whichever account they land in.
+const isDailyEmailOffer = (desc) => /daily\s*email\s*offer/i.test(desc || '');
 const isDictionary = (desc) => /atomic word dictionary|word dictionary/i.test(desc || '');
 // ThriveCart €7 dictionary, €9 order bump and €16 (both) are not Atomic Homework revenue.
 const isDictAmount = (amount) => [7, 9, 16].some((p) => priceIs(amount, p));
@@ -383,6 +388,7 @@ function analyse() {
   const join = new Map();       // main: ident → first paid charge (unix s)
   const joinVia = new Map();    // ident → 'paypal' | 'stripe' (how that first payment was made)
   const joinAmount = new Map(); // ident → amount of that first payment
+  const joinDaily = new Set();  // idents whose first payment was the Daily Email Offer
   const joinAwd = new Set();    // idents whose first payment was the €39 "AWD Upsell"
   const mainSubs = new Map();   // ident → [subs]
   const dictBuys = new Map();   // ident → [dictionary purchase times]
@@ -400,20 +406,22 @@ function analyse() {
     }
     const net = (parseFloat(c.amount) || 0) - (parseFloat(c.amount_refunded) || 0);
     if (c.status !== 'Paid' || net <= 0) continue;
-    if (c.channel === 'thrivecart') {
-      // Every ThriveCart sale is the Atomic Homework upsell.
+    if (c.channel === 'thrivecart' && !isDailyEmailOffer(c.description)) {
+      // Every other ThriveCart sale is the Atomic Homework upsell.
       if (!isDictionary(c.description) && (!tcJoin.has(id) || ts < tcJoin.get(id))) tcJoin.set(id, ts);
       if (!isDictionary(c.description) && !isDictAmount(parseFloat(c.amount))) addCents(id, net);
       continue;
     }
     const awd = isAwdUpsell(c.description, parseFloat(c.amount) || 0);
-    if (!(awd || isAtomicHomework(c.description))) continue;
+    const daily = isDailyEmailOffer(c.description);
+    if (!(awd || daily || isAtomicHomework(c.description))) continue;
     addCents(id, net);
     if (!join.has(id) || ts < join.get(id)) {
       join.set(id, ts);
       joinVia.set(id, c.channel === 'paypal' ? 'paypal' : 'stripe');
       joinAmount.set(id, parseFloat(c.amount) || 0);
       if (awd) joinAwd.add(id); else joinAwd.delete(id);
+      if (daily) joinDaily.add(id); else joinDaily.delete(id);
     }
   }
   const joinedAs = new Map();   // ident → { date, source } of their earliest membership (either account)
@@ -451,7 +459,8 @@ function analyse() {
     const firstDict = Math.min(Infinity, ...(dictBuys.get(id) || []));
     const awd = joinAwd.has(id) || signup?.awd_upsell;
     let source;
-    if (firstDict <= signedUp + 300) {
+    if (joinDaily.has(id)) source = 'daily_email';
+    else if (firstDict <= signedUp + 300) {
       if (awd || signedUp - firstDict <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
       else if (signedUp - firstDict <= UPSELL_SEQ_WINDOW) source = 'upsell_email';
       else source = 'daily_email';
@@ -490,7 +499,8 @@ function analyse() {
     const sub = (allSubs.get(id) || []).filter((s) => s.start >= bought - 300).sort((a, b) => a.start - b.start)[0];
     if (!sub) continue;
     let source;
-    if (sub.account === 'thrivecart' || sub.awd_upsell || sub.start - bought <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
+    if (isDailyEmailOffer(sub.product_name)) source = 'daily_email';
+    else if (sub.account === 'thrivecart' || sub.awd_upsell || sub.start - bought <= UPSELL_PAGE_WINDOW) source = 'dictionary_ad_upsell';
     else if (sub.start - bought <= UPSELL_SEQ_WINDOW) source = 'upsell_email';
     else source = 'daily_email';
     buyers.set(id, { bought, joined: sub.start, source, paid: false, cents: 0 });
