@@ -111,6 +111,9 @@ function mapPayPalTxn(t) {
     raw_description: ti.transaction_subject || '',
     item_names: itemNames,
     custom_field: ti.custom_field || '',
+    // PayPal subscription ID (I-...), when the payment belongs to one.
+    paypal_sub_id: [ti.paypal_reference_id, ti.custom_field, ti.invoice_id]
+      .find((v) => typeof v === 'string' && /^I-[A-Z0-9]+$/i.test(v.trim())) || '',
     channel: 'paypal',
     source: 'paypal_api',
   };
@@ -178,6 +181,19 @@ async function persist(rows) {
   return appendToCache(unique);
 }
 
+// Atomic Homework subscription payments get their PayPal plan ID (paypal_plan_id),
+// so the members page can tell which page sold them (each page has its own plan).
+async function addPlanIds(rows) {
+  for (const r of rows) {
+    if (!r.paypal_sub_id || r.status !== 'Paid' || !/atomic homework/i.test(r.description || '')) continue;
+    try {
+      r.paypal_plan_id = (await getSubscription(r.paypal_sub_id)).plan_id || '';
+    } catch (err) {
+      console.error(`[paypal-refresh] plan lookup ${r.paypal_sub_id} failed:`, err.message);
+    }
+  }
+}
+
 // ─── Public: incremental refresh (hourly cron) ───────────────────────
 export async function refreshPayPal() {
   const t0 = Date.now();
@@ -187,6 +203,7 @@ export async function refreshPayPal() {
   const existing = new Set(getCachedCharges().map((c) => String(c.id)));
   const rows = await fetchWindow(start, end);
   const fresh = rows.filter((r) => !existing.has(r.id));
+  await addPlanIds(fresh);
   const { added, updated } = await persist(fresh);
   const result = {
     source: 'paypal',
