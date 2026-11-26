@@ -70,7 +70,7 @@ export async function listTemplates() {
     if (!line) continue;
     const productName = line.price?.product?.name || line.description || '';
     out.push({
-      atomic: /atomic homework/i.test(productName),
+      atomic: /atomic homework/i.test(productName) && !/everything bundle/i.test(productName),
       id: l.id,
       url: l.url,
       product: productName,

@@ -41,6 +41,7 @@ function getStripeKey() {
 // dictionary is the Atomic Homework upsell (the only thing sold there).
 function thrivecartProduct(desc) {
   const low = (desc || '').toLowerCase();
+  if (low.includes('everything bundle')) return desc.trim();
   if (low.includes('atomic homework')) return ATOMIC;
   if (low.includes('dictionary')) return desc.trim();
   if (low.includes('vig village') || low.includes('vitamin v') || low.includes('speaking school')) return desc.trim();
