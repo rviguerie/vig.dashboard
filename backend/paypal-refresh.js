@@ -65,6 +65,10 @@ function normalizeProductName(subject) {
   const s = (subject || '').trim();
   if (!s || s.startsWith('~@~')) return '';
   const low = s.toLowerCase();
+  // Everything Bundle names also list "Vig Village, Atomic Homework": check it first.
+  if (low.includes('everything bundle')) {
+    return /year|891/.test(low) ? s : 'Everything Bundle - Monthly';
+  }
   if (low.includes('atomic homework')) return 'Mr. Vigs Atomic Homework';
   if (low.includes('vitamin v')) return 'Vitamin V EXTRA STRENGTH';
   if (low.includes('speaking school')) return 'Speaking School';

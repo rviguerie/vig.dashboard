@@ -19,10 +19,19 @@ const PRICE_RULES = {
   'Vitamin V EXTRA STRENGTH': [[29, 1]],
   'Speaking School': [[29, 1], [87, 3]],
   'Everything Bundle - Yearly (€891)': [[891, 12]],
+  'Everything Bundle - Monthly': [[148, 1], [149, 1]],
 };
 const TRACKED = Object.keys(PRICE_RULES);
 
 const DAY = 86400000;
+
+const BUNDLE_MONTHLY_PRICES = [148, 149];
+function isBundleMonthly(desc, amount) {
+  const low = desc.toLowerCase();
+  if (/everything bundle/.test(low)) return !/year|891/.test(low);
+  const bundlePrice = BUNDLE_MONTHLY_PRICES.some((p) => Math.abs((amount || 0) - p) < 0.01);
+  return bundlePrice && (desc === 'Mr. Vigs Atomic Homework' || desc === 'Vig Village');
+}
 
 function normalizeProduct(desc, amount) {
   desc = (desc || '').trim();
@@ -30,6 +39,9 @@ function normalizeProduct(desc, amount) {
   if (desc.startsWith('Invoice ') || desc === 'Subscription creation' || desc.startsWith('Payment for invoice ')) {
     return '__native_sub_unattributed__';
   }
+  // Everything Bundle monthly (€148, earlier €149). Its Stripe name also says
+  // "Vig Village, Atomic Homework", so older rows may be stored under those names.
+  if (isBundleMonthly(desc, amount)) return 'Everything Bundle - Monthly';
   // "AWD Upsell" at €39 is Atomic Homework sold as the dictionary one-click upsell.
   if (/awd upsell/i.test(desc) && Math.abs((amount || 0) - 39) < 0.01) return 'Mr. Vigs Atomic Homework';
   // ThriveCart "Atomic Homework Daily Email Offer" (the daily-email checkout) is Atomic Homework.
