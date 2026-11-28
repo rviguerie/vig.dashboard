@@ -246,6 +246,25 @@ details.how .note{font-style:normal}
         <div class="metric-sub">processed refunds</div>
       </div>
     </div>
+    <details class="how"><summary id="cx-summary">Show each cancellation</summary>
+      <div style="overflow-x:auto;max-height:420px;overflow-y:auto"><table class="product-table sb-list">
+        <thead><tr><th>Counted on</th><th>Customer</th><th>Product</th><th>Plan</th><th>Last paid</th></tr></thead>
+        <tbody id="cx-tbody"></tbody>
+      </table></div>
+    </details>
+    <details class="how"><summary id="cx-not-summary">Not counted as cancelled</summary>
+      <div style="overflow-x:auto;max-height:420px;overflow-y:auto"><table class="product-table sb-list">
+        <thead><tr><th>Paid time ran out</th><th>Customer</th><th>Product</th><th>Plan</th><th>Last paid</th><th>Why not counted</th></tr></thead>
+        <tbody id="cx-not-tbody"></tbody>
+      </table></div>
+    </details>
+    <details class="how"><summary>How cancellations are counted</summary><div class="note">
+      A member counts as cancelled when their paid time ran out (1 month or 1 year after the last payment) and 7 more days passed with no new payment for that product.
+      It covers people who pressed cancel and people whose card failed. The day they pressed cancel is not in the payment data.
+      <b>Not counted:</b> members who started another main product around the same time (for example Atomic Homework → Everything Bundle, or monthly Vig Village → bundle yearly),
+      members who kept paying for the same product at a price the dashboard doesn't know, and members whose last payment was refunded (those show under Refunds).
+      Monthly → annual on the same product was never counted as a cancellation.
+    </div></details>
   </div>
 
   <div class="section" id="sales-breakdown-section">
@@ -611,6 +630,33 @@ function getFilters() {
   };
 }
 
+// ─── Which lapses are NOT real cancellations ─────────────────────────
+// A lapse = a member's paid time ran out (+7-day grace) with no new payment
+// for that product. Some of those people did not really leave. Returns a
+// reason string when the lapse is not a real cancellation, or null when it is.
+// Keep in sync with whyNotCancelled() in backend/metrics.js.
+//   'switched'      – started another main product around the same time
+//                     (e.g. Atomic Homework → Everything Bundle, Vig Village → bundle yearly)
+//   'still paying'  – kept paying for this product at a price the dashboard doesn't know
+//   'refunded'      – their last payment was refunded (counted under Refunds instead)
+function whyNotCancelled(product, ident, best, byIdent) {
+  const D = 86400000;
+  const mine = byIdent.get(ident) || [];
+  const from = best.date.getTime() - 15 * D;
+  const to = best.activeUntil.getTime() + 30 * D;
+  if (mine.some(c => c.product === product && c.status === 'Paid' && c.net > 0 && c.date > best.date && monthsFor(product, c.amount) === null)) return 'still paying';
+  for (const q of TRACKED) {
+    if (q === product) continue;
+    const paid = mine.filter(c => c.product === q && c.status === 'Paid' && c.net > 0 && monthsFor(q, c.amount) !== null);
+    if (!paid.length) continue;
+    const wasActive = paid.some(c => { const t = c.date.getTime(); return t < from && t + (monthsFor(q, c.amount) * 30 + 7) * D >= from; });
+    const started = paid.some(c => { const t = c.date.getTime(); return t >= from && t <= to; });
+    if (started && !wasActive) return 'switched';
+  }
+  if (mine.some(c => c.product === product && (c.status === 'Refunded' || c.refunded > 0) && c.date.getTime() >= best.date.getTime() - 3 * D)) return 'refunded';
+  return null;
+}
+
 function compute(filters) {
   const { products: productSel, start, end } = filters;
   const allSelected = !productSel || productSel.size === 0;
@@ -621,6 +667,17 @@ function compute(filters) {
     return true;
   });
   if (!charges.length) return null;
+
+  // Every customer's payments across ALL products (ignores the product filter),
+  // so a switch to another product can be spotted.
+  const byIdent = new Map();
+  for (const c of allCharges) {
+    if (c.date > asOf) continue;
+    const id = c.email || c.customerId || c.invoiceId;
+    if (!id) continue;
+    if (!byIdent.has(id)) byIdent.set(id, []);
+    byIdent.get(id).push(c);
+  }
 
   // Build first-paid-charge date per (product, ident) across the entire
   // filtered history so we can classify each charge as Sale (customer's
@@ -740,6 +797,7 @@ function compute(filters) {
   const activeIdents = new Set();
   const cohortStartIdents = new Set();
   const cancelledIdents = new Set();
+  const cancelledRows = [], notCancelled = [];
   const in30 = new Date(asOf.getTime() + 30 * 86400000);
 
   for (const [key, info] of lastCharge.entries()) {
@@ -764,8 +822,12 @@ function compute(filters) {
       }
       activeIdents.add(ident);
     } else if (info.activeUntil >= cutoff && info.activeUntil < asOf) {
+      const why = whyNotCancelled(product, ident, info, byIdent);
+      const row = { date: info.activeUntil, email: ident, product, lastPaid: info.date, amount: info.amount, months: info.months, why };
+      if (why) { notCancelled.push(row); continue; }
       if (TRACKED.includes(product)) stats[product].cancelled++;
       cancelledIdents.add(ident);
+      cancelledRows.push(row);
     }
   }
 
@@ -783,11 +845,11 @@ function compute(filters) {
     }
     for (const arr of subs.values()) arr.sort((a, b) => a.date - b.date);
     const activeSet = (T) => {
-      const t = T.getTime(); const set = new Set();
+      const t = T.getTime(); const set = new Map();
       for (const [k, arr] of subs) {
-        let bd = -1, bu = -1;
-        for (const c of arr) { const cd = c.date.getTime(); if (cd > t) break; const mm = monthsFor(c.product, c.amount); if (mm === null) continue; if (cd > bd) { bd = cd; bu = cd + (mm * 30 + 7) * 86400000; } }
-        if (bu >= t) set.add(k);
+        let bd = -1, bu = -1, ba = 0, bm = 0;
+        for (const c of arr) { const cd = c.date.getTime(); if (cd > t) break; const mm = monthsFor(c.product, c.amount); if (mm === null) continue; if (cd > bd) { bd = cd; bu = cd + (mm * 30 + 7) * 86400000; ba = c.amount; bm = mm; } }
+        if (bu >= t) set.set(k, { date: new Date(bd), activeUntil: new Date(bu), amount: ba, months: bm });
       }
       return set;
     };
@@ -797,7 +859,12 @@ function compute(filters) {
       const startM = new Date(d); const nextM = new Date(d); nextM.setUTCMonth(nextM.getUTCMonth() + 1);
       const evalNext = nextM > asOf ? asOf : nextM;
       const aStart = activeSet(startM), aNext = activeSet(evalNext);
-      let lapsed = 0; for (const k of aStart) if (!aNext.has(k)) lapsed++;
+      let lapsed = 0;
+      for (const [k, best] of aStart) {
+        if (aNext.has(k)) continue;
+        const i = k.indexOf('||');
+        if (!whyNotCancelled(k.slice(0, i), k.slice(i + 2), best, byIdent)) lapsed++;
+      }
       churnMonthly[ym(startM)] = aStart.size > 0 ? Math.round(1000 * lapsed / aStart.size) / 10 : 0;
     }
   }
@@ -829,6 +896,8 @@ function compute(filters) {
     salesCount: salesCount.count, rebillsCount: rebillsCount.count,
     distinctActive: activeIdents.size,
     cohortSize, cancelledCount, churnPct,
+    cancelledRows: cancelledRows.sort((a, b) => b.date - a.date),
+    notCancelled: notCancelled.sort((a, b) => b.date - a.date),
     byProduct: TRACKED.map(p => ({
       product: p,
       active: stats[p].active, monthlySubs: stats[p].monthly, annualSubs: stats[p].annual, otherSubs: stats[p].other, otherCadences: [...stats[p].otherCadences].sort((a, b) => a - b),
@@ -981,6 +1050,19 @@ function computeSalesBreakdown(charges, cutoff, asOf, rate) {
 const SB_LIST_MAX = 500;
 const _timeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
+const WHY_LABEL = { switched: 'Switched to another product', 'still paying': 'Still paying (unknown price)', refunded: 'Refunded' };
+function renderCancellations(m) {
+  const plan = r => r.months >= 11 ? 'annual' : r.months === 1 ? 'monthly' : r.months + '-month';
+  const d = x => _timeFmt.format(x).split(',')[0];
+  const row = (r, extra) => `<tr><td>${d(r.date)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.product)}</td><td>${plan(r)}</td><td>${d(r.lastPaid)}</td>${extra}</tr>`;
+  document.getElementById('cx-summary').textContent = `Show each cancellation (${fmt(m.cancelledRows.length)})`;
+  document.getElementById('cx-tbody').innerHTML = m.cancelledRows.map(r => row(r, '')).join('') ||
+    '<tr><td colspan="5" style="color:#4b5563">No cancellations in this window.</td></tr>';
+  document.getElementById('cx-not-summary').textContent = `Not counted as cancelled (${fmt(m.notCancelled.length)})`;
+  document.getElementById('cx-not-tbody').innerHTML = m.notCancelled.map(r => row(r, `<td>${WHY_LABEL[r.why] || r.why}</td>`)).join('') ||
+    '<tr><td colspan="6" style="color:#4b5563">None.</td></tr>';
+}
+
 function renderSalesBreakdown(sb) {
   const tbody = document.getElementById('sb-tbody');
   tbody.innerHTML = '';
@@ -1077,7 +1159,9 @@ function render(m) {
   document.getElementById('m-active-total').textContent = fmt(m.distinctActive);
 
   document.getElementById('m-cancelled').textContent = fmt(m.cancelledCount);
-  document.getElementById('m-cancelled-sub').textContent = `of ${fmt(m.cohortSize)} active at window start`;
+  document.getElementById('m-cancelled-sub').textContent = `of ${fmt(m.cohortSize)} active at window start` +
+    (m.notCancelled.length ? ` · ${fmt(m.notCancelled.length)} not counted (switched, refunded or still paying)` : '');
+  renderCancellations(m);
   document.getElementById('m-churn-pct').textContent = m.churnPct.toFixed(1) + '%';
   document.getElementById('m-churn-sub').textContent = `${fmt(m.cancelledCount)} of ${fmt(m.cohortSize)} cohort`;
   document.getElementById('m-refunds').textContent = eur(m.refunds.eur) + (m.refunds.usd ? ' + ' + usd(m.refunds.usd) : '');
