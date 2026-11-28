@@ -56,6 +56,25 @@ function monthsFor(product, amount) {
   return null;
 }
 
+// Which lapses are NOT real cancellations. Keep in sync with whyNotCancelled()
+// in public/dashboard.html. Returns 'switched' | 'still paying' | 'refunded' | null.
+function whyNotCancelled(product, ident, best, byIdent) {
+  const mine = byIdent.get(ident) || [];
+  const from = best.date.getTime() - 15 * DAY;
+  const to = best.activeUntil.getTime() + 30 * DAY;
+  if (mine.some((c) => c.product === product && c.status === 'Paid' && c.net > 0 && c.date > best.date && monthsFor(product, c.amount) === null)) return 'still paying';
+  for (const q of TRACKED) {
+    if (q === product) continue;
+    const paid = mine.filter((c) => c.product === q && c.status === 'Paid' && c.net > 0 && monthsFor(q, c.amount) !== null);
+    if (!paid.length) continue;
+    const wasActive = paid.some((c) => { const t = c.date.getTime(); return t < from && t + (monthsFor(q, c.amount) * 30 + 7) * DAY >= from; });
+    const started = paid.some((c) => { const t = c.date.getTime(); return t >= from && t <= to; });
+    if (started && !wasActive) return 'switched';
+  }
+  if (mine.some((c) => c.product === product && (c.status === 'Refunded' || c.refunded > 0) && c.date.getTime() >= best.date.getTime() - 3 * DAY)) return 'refunded';
+  return null;
+}
+
 // Days are counted in Prague time (Europe/Prague), not UTC.
 const TZ = 'Europe/Prague';
 const _dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -130,7 +149,7 @@ export function getSchema() {
     data_min_date: isFinite(min) ? ymd(new Date(min)) : null,
     data_max_date: isFinite(max) ? ymd(new Date(max)) : null,
     total_charges: charges.length,
-    notes: 'Amounts are EUR unless noted. "active" = had a paid charge whose covered period (by price→cadence rule) has not lapsed. Sale = a customer\'s first ever paid charge for a product; Rebill = any subsequent. Churn% = cancelled-in-window / cohort-active-at-window-start.',
+    notes: 'Amounts are EUR unless noted. "active" = had a paid charge whose covered period (by price→cadence rule) has not lapsed. Sale = a customer\'s first ever paid charge for a product; Rebill = any subsequent. Churn% = cancelled-in-window / cohort-active-at-window-start. Cancelled leaves out members who switched to another main product, were refunded, or kept paying at an unknown price.',
   };
 }
 
@@ -201,7 +220,15 @@ export function queryMetrics({ start_date, end_date, product, channel } = {}) {
     if (!histories.has(k)) histories.set(k, []);
     histories.get(k).push(c);
   }
-  let activeCount = 0, mrr = 0, cancelled = 0;
+  const byIdent = new Map();
+  for (const c of all) {
+    if (c.date > asOf) continue;
+    const id = c.email || c.customerId || c.invoiceId;
+    if (!id) continue;
+    if (!byIdent.has(id)) byIdent.set(id, []);
+    byIdent.get(id).push(c);
+  }
+  let activeCount = 0, mrr = 0, cancelled = 0, notCancelled = 0;
   const cohortStart = new Set();
   const activeIdents = new Set();
   const cancelledIdents = new Set();
@@ -224,6 +251,7 @@ export function queryMetrics({ start_date, end_date, product, channel } = {}) {
       activeCount++; mrr += best.mrr; activeIdents.add(id);
       perProductActive[prod] = (perProductActive[prod] || 0) + 1;
     } else if (best.activeUntil >= cutoff && best.activeUntil < asOf) {
+      if (whyNotCancelled(prod, id, best, byIdent)) { notCancelled++; continue; }
       cancelled++; cancelledIdents.add(id);
     }
   }
@@ -242,6 +270,7 @@ export function queryMetrics({ start_date, end_date, product, channel } = {}) {
     active_subscribers: activeIdents.size,
     mrr_eur: round(mrr),
     cancelled_in_window: cancelledIdents.size,
+    lapsed_but_not_cancelled: notCancelled, // switched product, refunded, or still paying at an unknown price
     cohort_at_window_start: cohortStart.size,
     churn_pct: Math.round(churnPct * 10) / 10,
     channel_revenue_eur: Object.fromEntries(Object.entries(channels).map(([k, v]) => [k, round(v)])),
